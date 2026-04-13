@@ -54,6 +54,7 @@ class SRTEditor:
         self.autoscroll = False
         self.words_per_minute_element = None
         self.speakers = set()
+        self.speaker_map = {}
         self.data_format = None
         self.filename = filename
 
@@ -473,6 +474,12 @@ class SRTEditor:
 
         original_data = json.loads(data)
 
+        sm = original_data.get("speaker_map", {})
+
+        if sm:
+            for sm_key, sm_value in sm[1:]:
+                self.speaker_map[sm_key] = sm_value
+
         if not original_data.get("segments"):
             return
 
@@ -687,12 +694,21 @@ class SRTEditor:
 
         return txt_content.strip()
 
-    def export_json(self) -> str:
-        return {
-            "segments": [seg.to_dict() for seg in self.captions],
-            "speaker_count": len(self.speakers),
-            "full_transcription": " ".join(seg.text for seg in self.captions),
-        }
+    def export_json(self, speaker_map: bool) -> str:
+
+        if speaker_map:
+            return {
+                "speaker_map": speaker_map,
+                "segments": [seg.to_dict() for seg in self.captions],
+                "speaker_count": len(self.speakers),
+                "full_transcription": " ".join(seg.text for seg in self.captions),
+            }
+        else:
+            return {
+                "segments": [seg.to_dict() for seg in self.captions],
+                "speaker_count": len(self.speakers),
+                "full_transcription": " ".join(seg.text for seg in self.captions),
+            }
 
     def export_srt(self) -> str:
         """
@@ -1418,7 +1434,8 @@ class SRTEditor:
                             ui.label(f"#{caption.index}").classes("font-bold text-sm")
 
                             if self.data_format == "txt":
-                                ui.label(f"{caption.speaker}:").classes(
+                                displayed_speaker = self.speaker_map.get(caption.speaker, caption.speaker)
+                                ui.label(f"{displayed_speaker}:").classes(
                                     "font-bold text-sm"
                                 )
                         ui.label(f"{caption.start_time} - {caption.end_time}").classes(
@@ -1436,7 +1453,8 @@ class SRTEditor:
                                 )
 
                                 if self.data_format == "txt":
-                                    ui.label(f"{caption. speaker}:").classes(
+                                    displayed_speaker = self.speaker_map.get(caption.speaker, caption.speaker)
+                                    ui.label(f"{displayed_speaker}:").classes(
                                         "font-bold text-sm"
                                     )
                             ui.label(
@@ -1956,7 +1974,7 @@ class SRTEditor:
 
     def show_export_dialog(
         self, filename: str, bulk_editors: list | None = None
-    ) -> None:
+    ) -> None: block
         """
         Show comprehensive export dialog with format options and live preview.
         When bulk_editors is provided (list of (filename, editor) tuples),
