@@ -480,6 +480,8 @@ class SRTEditor:
             for sm_key, sm_value in sm[1:]:
                 self.speaker_map[sm_key] = sm_value
 
+        self.speakers.add("UNKNOWN")
+
         if not original_data.get("segments"):
             return
 
