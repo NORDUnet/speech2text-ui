@@ -38,6 +38,8 @@ class Settings(BaseSettings):
     OIDC_APP_REFRESH_ROUTE: str = ""
     STORAGE_SECRET: str = "change_this_secret_to_another_very_secret_secret"
 
+    MULTIPART_SPOOL_MAX_SIZE_MB: int = 4096
+
     LOGO_LANDING: str = "sunet_logo.png"
     LOGO_LANDING_WIDTH: str = "250"
     LOGO_TOPBAR: str = "sunet_small.png"
@@ -45,6 +47,7 @@ class Settings(BaseSettings):
     TAB_TITLE: str = "Sunet Scribe"
     TOPBAR_TEXT: str = "Sunet Scribe"
     LANDING_TEXT: str = "Welcome to Sunet Scribe"
+    ABOUT_TEXT: str = "About Sunet Scribe"
 
     WHISPER_MODELS: list[str] = [
         "Fast transcription (normal accuracy)",
