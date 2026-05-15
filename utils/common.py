@@ -857,41 +857,46 @@ def table_click(event) -> None:
         )
 
 
-async def post_file(file_path: str, filename: str) -> bool:
+async def post_file(file_path: str, filename: str) -> tuple[bool, str | None]:
     """
-    Stream a file from disk to the API without loading it into memory.
+    Stream a file from disk to the API as a raw request body.
+
+    Do not call ui.notify() here. This function can run from a background task,
+    where NiceGUI has no active slot/client context.
     """
+
+    async def file_chunker(path: str, chunk_size: int = 1024 * 1024):
+        with open(path, "rb") as upload_file:
+            while True:
+                chunk = await asyncio.to_thread(upload_file.read, chunk_size)
+                if not chunk:
+                    break
+                yield chunk
 
     try:
+        headers = get_auth_header()
+        headers["Content-Type"] = "application/octet-stream"
+        headers["Content-Length"] = str(os.path.getsize(file_path))
+
         async with httpx.AsyncClient(timeout=900) as client:
-            with open(file_path, "rb") as upload_file:
-                response = await client.post(
-                    f"{settings.API_URL}/api/v1/transcriber",
-                    files={
-                        "file": (
-                            filename,
-                            upload_file,
-                            "application/octet-stream",
-                        )
-                    },
-                    headers=get_auth_header(),
-                )
+            response = await client.post(
+                f"{settings.API_URL}/api/v1/transcriber/stream",
+                params={"filename": filename},
+                content=file_chunker(file_path),
+                headers=headers,
+            )
 
-            response.raise_for_status()
+        response.raise_for_status()
+        return True, None
 
-            if response.status_code != 200:
-                raise httpx.HTTPStatusError(
-                    f"Upload failed, status code: {response.status_code}",
-                    request=response.request,
-                    response=response,
-                )
     except httpx.HTTPStatusError as e:
-        ui.notify(
-            f"Error when uploading file: {str(e)}", type="negative", position="top"
-        )
-        return False
+        return False, f"{e.response.status_code}: {e.response.text}"
 
-    return True
+    except httpx.HTTPError as e:
+        return False, str(e)
+
+    except Exception as e:
+        return False, str(e)
 
 
 def format_size(bytes_val) -> str:
@@ -1084,7 +1089,7 @@ async def handle_upload_with_feedback(files, dialog, table, status_label):
                             f"Storing and encrypting file {index} of {total}: {file_name}"
                         )
 
-                success = await post_file(temp_path, file_name)
+                success, error = await post_file(temp_path, file_name)
 
                 if not client._deleted:
                     with client:
@@ -1096,7 +1101,7 @@ async def handle_upload_with_feedback(files, dialog, table, status_label):
                             )
                         else:
                             ui.notify(
-                                f"Error uploading {file_name}",
+                                f"Error uploading {file_name}: {error}",
                                 type="negative",
                                 timeout=5000,
                             )
