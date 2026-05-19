@@ -84,7 +84,7 @@ async def index(request: Request) -> None:
         user_data = get_user_data()
 
         if not user_data["encryption_settings"]:
-            with ui.dialog() as dialog:
+            with ui.dialog().props("persistent") as dialog:
                 with ui.card():
                     ui.label("Set your encryption passphrase").classes("text-h6")
                     ui.label(
@@ -137,7 +137,7 @@ async def index(request: Request) -> None:
                     ).props("color=black").style("margin-top: 10px;")
                 dialog.open()
         else:
-            with ui.dialog() as dialog:
+            with ui.dialog().props("persistent") as dialog:
                 with ui.card():
                     ui.label("Enter your encryption passphrase").classes("text-h6")
                     password_input = ui.input(
