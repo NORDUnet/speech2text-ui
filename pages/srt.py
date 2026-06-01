@@ -47,6 +47,9 @@ def save_srt(job_id: str, data: str, editor: SRTEditor, data_format: str) -> Non
         ui.notify(f"Error: Failed to save file: {e}", type="negative")
         return
 
+    editor.mark_as_saved()
+    editor.update_beforeunload_state()
+
     ui.notify(
         "File saved successfully",
         type="positive",
