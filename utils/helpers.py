@@ -186,6 +186,7 @@ def save_customer(
     new_realms: str,
     notes: str,
     blocks_purchased: int,
+    default_transcription_language: str = "",
 ) -> None:
     # Combine selected and new realms
     new_realm_list = [r.strip() for r in new_realms.split(",") if r.strip()]
@@ -207,6 +208,7 @@ def save_customer(
                 "realms": realms_str,
                 "notes": notes,
                 "blocks_purchased": int(blocks_purchased) if blocks_purchased else 0,
+                "default_transcription_language": default_transcription_language,
             },
         )
         res.raise_for_status()
@@ -309,6 +311,42 @@ def email_save(email: str) -> None:
 
     except httpx.HTTPError:
         ui.notify("Failed to save e-mail address", color="red")
+        return None
+
+
+def default_language_save(language: str) -> None:
+    """
+    Save the user's default transcription language.
+
+    An empty string clears the personal override so the realm/customer default
+    applies again.
+
+    Parameters:
+        language (str): The language to save, or "" to inherit the realm default.
+    """
+
+    try:
+        response = httpx.put(
+            f"{settings.API_URL}/api/v1/me",
+            headers=get_auth_header(),
+            json={"default_transcription_language": language},
+        )
+        response.raise_for_status()
+        data = response.json()
+
+        if "error" in data.get("result", {}):
+            ui.notify(f"Error: {data['result']['error']}", color="red")
+            return None
+
+        if language:
+            ui.notify(f"Default language set to {language}", color="green")
+        else:
+            ui.notify("Default language set to organisation default", color="green")
+
+        return data["result"]
+
+    except httpx.HTTPError:
+        ui.notify("Failed to save default language", color="red")
         return None
 
 

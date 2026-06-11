@@ -19,6 +19,7 @@ from nicegui import app, ui
 from utils.common import page_init
 from utils.common import default_styles
 from utils.helpers import (
+    default_language_save,
     email_get,
     email_save,
     email_save_notifications,
@@ -125,6 +126,37 @@ def create() -> None:
             save.props("color=black flat")
             save.classes("default-style")
             save.on("click", lambda: email_save(email.value))
+
+        # -- Transcription section --
+        ui.label("Transcription").classes("text-lg font-semibold mb-2")
+        ui.separator()
+
+        inherit_label = "Use organisation default"
+        user_language = userdata.get("user_default_transcription_language")
+        language_options = [inherit_label] + settings.WHISPER_LANGUAGES
+        current_language = (
+            user_language
+            if user_language in settings.WHISPER_LANGUAGES
+            else inherit_label
+        )
+
+        with ui.column().classes("gap-2 mt-2 mb-6"):
+            ui.label(
+                "Default language preselected when you start a transcription. "
+                "Choose \"Use organisation default\" to follow your organisation's setting."
+            ).classes("text-sm text-gray-500")
+
+            with ui.row().classes("items-center gap-3"):
+                ui.icon("translate", color="black").style("font-size: 20px;")
+                default_language = ui.select(
+                    language_options,
+                    value=current_language,
+                ).style("min-width: 300px;")
+                default_language.on_value_change(
+                    lambda e: default_language_save(
+                        "" if e.value == inherit_label else e.value
+                    )
+                )
 
         # -- Notifications section --
         ui.label("Notifications").classes("text-lg font-semibold mb-2")

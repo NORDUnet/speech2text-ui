@@ -1127,6 +1127,17 @@ def create_customer_dialog(page: callable) -> None:
                 ui.input("Support contact address").classes("w-full").props("outlined")
             )
 
+            language_inherit_label = "Use system default"
+            default_language_select = (
+                ui.select(
+                    [language_inherit_label] + settings.WHISPER_LANGUAGES,
+                    label="Default transcription language",
+                    value=language_inherit_label,
+                )
+                .classes("w-full")
+                .props("outlined")
+            )
+
             priceplan_select = (
                 ui.select(["fixed", "variable"], label="Price plan", value="variable")
                 .classes("w-full")
@@ -1215,6 +1226,10 @@ def create_customer_dialog(page: callable) -> None:
                                 else 0,
                                 "realms": realms_str,
                                 "notes": notes_input.value,
+                                "default_transcription_language": ""
+                                if default_language_select.value
+                                == language_inherit_label
+                                else default_language_select.value,
                             },
                         )
 
@@ -1315,6 +1330,22 @@ def edit_customer(customer_id: str) -> None:
                 .classes("w-full")
             )
 
+            language_inherit_label = "Use system default"
+            customer_language = customer.get("default_transcription_language")
+            default_language_select = (
+                ui.select(
+                    [language_inherit_label] + settings.WHISPER_LANGUAGES,
+                    label="Default transcription language",
+                    value=(
+                        customer_language
+                        if customer_language in settings.WHISPER_LANGUAGES
+                        else language_inherit_label
+                    ),
+                )
+                .classes("w-full")
+                .props("outlined")
+            )
+
             priceplan_select = (
                 ui.select(
                     ["fixed", "variable"],
@@ -1393,6 +1424,9 @@ def edit_customer(customer_id: str) -> None:
                 new_realms_input.value,
                 notes_input.value,
                 blocks_input.value,
+                ""
+                if default_language_select.value == language_inherit_label
+                else default_language_select.value,
             ),
         )
         ui.button("Cancel").classes("delete-style").props("color=black flat").on(

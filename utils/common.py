@@ -1122,10 +1122,29 @@ async def handle_upload_with_feedback(files, dialog, table, status_label):
     asyncio.create_task(_upload())
 
 
+def _default_transcription_language() -> str:
+    """
+    Return the language the transcribe dialog should preselect.
+
+    Uses the user's effective default (user override -> realm/customer default
+    -> system default) as resolved by the backend and returned from /me, falling
+    back to the first option if it is missing or not a selectable language.
+    """
+    userdata = get_user_data() or {}
+    language = userdata.get("default_transcription_language")
+
+    if language in settings.WHISPER_LANGUAGES:
+        return language
+
+    return settings.WHISPER_LANGUAGES[0]
+
+
 def table_transcribe(selected_row, on_complete=None) -> None:
     """
     Handle the click event on the Transcribe button.
     """
+    default_language = _default_transcription_language()
+
     with ui.dialog() as dialog:
         with (
             ui.card()
@@ -1147,7 +1166,7 @@ def table_transcribe(selected_row, on_complete=None) -> None:
                     ui.label("Language").classes("text-subtitle2 q-mb-sm")
                     language = ui.select(
                         settings.WHISPER_LANGUAGES,
-                        value=settings.WHISPER_LANGUAGES[0],
+                        value=default_language,
                     ).classes("w-full")
 
                 with ui.column().classes("col-12 col-sm-24") as verbatim_container:
@@ -1221,6 +1240,8 @@ def table_bulk_transcribe(table: ui.table, on_complete=None) -> None:
         ui.notify("No uploaded files selected", type="warning", position="top")
         return
 
+    default_language = _default_transcription_language()
+
     with ui.dialog() as dialog:
         with (
             ui.card()
@@ -1253,7 +1274,7 @@ def table_bulk_transcribe(table: ui.table, on_complete=None) -> None:
                     ui.label("Language").classes("text-subtitle2 q-mb-sm")
                     language = ui.select(
                         settings.WHISPER_LANGUAGES,
-                        value=settings.WHISPER_LANGUAGES[0],
+                        value=default_language,
                     ).classes("w-full")
 
                 with ui.column().classes("col-12 col-sm-24") as verbatim_container:
