@@ -69,6 +69,9 @@ class Settings(BaseSettings):
         "Ukrainian",
         "Icelandic",
     ]
+    # Fallback default used only when the backend-resolved default is unavailable.
+    # Keep in sync with DEFAULT_TRANSCRIPTION_LANGUAGE in the backend settings.
+    DEFAULT_TRANSCRIPTION_LANGUAGE: str = "Finnish"
 
 
 @lru_cache

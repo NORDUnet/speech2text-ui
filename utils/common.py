@@ -1136,6 +1136,13 @@ def _default_transcription_language() -> str:
     if language in settings.WHISPER_LANGUAGES:
         return language
 
+    # Backend default unavailable (e.g. /me failed): use the configured fallback,
+    # guarding against it not being a selectable option.
+    # NOTE: keep settings.DEFAULT_TRANSCRIPTION_LANGUAGE in sync with the
+    # backend's DEFAULT_TRANSCRIPTION_LANGUAGE.
+    if settings.DEFAULT_TRANSCRIPTION_LANGUAGE in settings.WHISPER_LANGUAGES:
+        return settings.DEFAULT_TRANSCRIPTION_LANGUAGE
+
     return settings.WHISPER_LANGUAGES[0]
 
 
