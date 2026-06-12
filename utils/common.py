@@ -1170,7 +1170,19 @@ def table_transcribe(selected_row, on_complete=None) -> None:
                     ui.label(f"{selected_row['filename']}")
 
                 with ui.column().classes("col-12 col-sm-24"):
-                    ui.label("Language").classes("text-subtitle2 q-mb-sm")
+                    with ui.row().classes("items-center gap-1 q-mb-sm"):
+                        ui.label("Language").classes("text-subtitle2")
+                        language_help = ui.icon("help_outline").classes(
+                            "text-grey-6 cursor-pointer"
+                        ).style("font-size: 16px;")
+                        language_help.tooltip(
+                            "Preselected from your default. "
+                            "Click to set your personal default in Settings."
+                        )
+                        language_help.on(
+                            "click",
+                            lambda: (dialog.close(), ui.navigate.to("/user")),
+                        )
                     language = ui.select(
                         settings.WHISPER_LANGUAGES,
                         value=default_language,
@@ -1278,7 +1290,19 @@ def table_bulk_transcribe(table: ui.table, on_complete=None) -> None:
                             ).classes("text-body2 text-black")
 
                 with ui.column().classes("col-12 col-sm-24"):
-                    ui.label("Language").classes("text-subtitle2 q-mb-sm")
+                    with ui.row().classes("items-center gap-1 q-mb-sm"):
+                        ui.label("Language").classes("text-subtitle2")
+                        language_help = ui.icon("help_outline").classes(
+                            "text-grey-6 cursor-pointer"
+                        ).style("font-size: 16px;")
+                        language_help.tooltip(
+                            "Preselected from your default. "
+                            "Click to set your personal default in Settings."
+                        )
+                        language_help.on(
+                            "click",
+                            lambda: (dialog.close(), ui.navigate.to("/user")),
+                        )
                     language = ui.select(
                         settings.WHISPER_LANGUAGES,
                         value=default_language,

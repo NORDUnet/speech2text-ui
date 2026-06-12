@@ -131,7 +131,7 @@ def create() -> None:
         ui.label("Transcription").classes("text-lg font-semibold mb-2")
         ui.separator()
 
-        inherit_label = "Use organisation default"
+        inherit_label = "Use automatic default"
         user_language = userdata.get("user_default_transcription_language")
         language_options = [inherit_label] + settings.WHISPER_LANGUAGES
         current_language = (
@@ -143,7 +143,8 @@ def create() -> None:
         with ui.column().classes("gap-2 mt-2 mb-6"):
             ui.label(
                 "Default language preselected when you start a transcription. "
-                "Choose \"Use organisation default\" to follow your organisation's setting."
+                "Choose \"Use automatic default\" to follow your organisation's "
+                "setting or an automatic guess based on your organisation."
             ).classes("text-sm text-gray-500")
 
             with ui.row().classes("items-center gap-3"):

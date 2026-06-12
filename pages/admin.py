@@ -1127,7 +1127,7 @@ def create_customer_dialog(page: callable) -> None:
                 ui.input("Support contact address").classes("w-full").props("outlined")
             )
 
-            language_inherit_label = "Use system default"
+            language_inherit_label = "Use automatic default"
             default_language_select = (
                 ui.select(
                     [language_inherit_label] + settings.WHISPER_LANGUAGES,
@@ -1330,7 +1330,7 @@ def edit_customer(customer_id: str) -> None:
                 .classes("w-full")
             )
 
-            language_inherit_label = "Use system default"
+            language_inherit_label = "Use automatic default"
             customer_language = customer.get("default_transcription_language")
             default_language_select = (
                 ui.select(

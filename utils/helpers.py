@@ -341,7 +341,7 @@ def default_language_save(language: str) -> None:
         if language:
             ui.notify(f"Default language set to {language}", color="green")
         else:
-            ui.notify("Default language set to organisation default", color="green")
+            ui.notify("Default language set to automatic default", color="green")
 
         return data["result"]
 
