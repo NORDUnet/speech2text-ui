@@ -578,8 +578,9 @@ class SRTEditor:
                         speaker=seg["speaker"]
                     )
                 )
-                if seg["speaker"] not in self.speakers:
-                    self.speakers.append(seg["speaker"])
+                seg_speaker = seg["speaker"].strip()
+                if seg_speaker not in self.speakers:
+                    self.speakers.append(seg_speaker)
 
     def parse_srt(self, srt_content: str) -> None:
         """
@@ -1081,7 +1082,7 @@ class SRTEditor:
         """
 
         if speaker:
-            if speaker not in self.speakers: 
+            if str(speaker.value) not in self.speakers:
                 self.speakers.append(speaker.value)
             self.selected_caption.speaker = speaker.value
 
