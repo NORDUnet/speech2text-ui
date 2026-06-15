@@ -92,6 +92,9 @@ def create() -> None:
             pagination=10,
         )
         table.props(":selected-rows-label=\"(n) => n + ' files selected'\"")
+        # Don't show Quasar's "No data available" bottom layer — an empty list is
+        # the expected state before a user uploads anything.
+        table.props("hide-no-data")
 
         # Custom header checkbox that selects/deselects ALL rows across all pages
         table.add_slot(
@@ -210,7 +213,10 @@ def create() -> None:
                 bulk_export.set_enabled(False)
                 bulk_transcribe.set_enabled(False)
 
-            table.selection = "multiple" if rows else "none"
+            # Keep selection enabled even when empty: toggling to "none" and back
+            # does not reliably re-render the per-row checkboxes without a page
+            # reload, so newly uploaded files would appear without selection boxes.
+            table.selection = "multiple"
             table.update_rows(rows, clear_selection=False)
 
             has_active = any(
@@ -222,7 +228,10 @@ def create() -> None:
         async def initial_load():
             rows = await jobs_get()
             table.rows = rows
-            table.selection = "multiple" if rows else "none"
+            # Keep selection enabled even when empty: toggling to "none" and back
+            # does not reliably re-render the per-row checkboxes without a page
+            # reload, so newly uploaded files would appear without selection boxes.
+            table.selection = "multiple"
 
         poll_timer = ui.timer(30.0, update_rows)
         ui.timer(0.0, initial_load, once=True)
