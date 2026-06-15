@@ -139,19 +139,19 @@ def reset_password() -> None:
                 "Are you sure you want to reset your encryption passphrase? This will remove all your files and cannot be undone."
             ).classes("text-subtitle2").style("margin-bottom: 10px;")
 
-            with ui.row().classes("justify-between w-full"):
+            with ui.row().classes("justify-end w-full gap-2"):
                 ui.button(
                     "Cancel",
-                    on_click=lambda: ui.navigate.to("/"),
-                ).props(
-                    "color=black"
-                ).style("margin-top: 10px;")
+                    on_click=lambda: dialog.close(),
+                ).classes("button-close").props("color=black flat").style(
+                    "margin-top: 10px; width: auto; min-width: 200px; white-space: nowrap;"
+                )
                 ui.button(
                     "Reset Passphrase",
                     on_click=lambda: do_reset(),
-                ).props(
-                    "color=red"
-                ).style("margin-top: 10px;")
+                ).classes("delete-style").props("color=black flat").style(
+                    "margin-top: 10px; width: auto; min-width: 200px; white-space: nowrap;"
+                )
         dialog.open()
 
 

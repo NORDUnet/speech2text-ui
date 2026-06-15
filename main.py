@@ -85,7 +85,7 @@ async def index(request: Request) -> None:
 
         if not user_data["encryption_settings"]:
             with ui.dialog().props("persistent") as dialog:
-                with ui.card():
+                with ui.card().style("min-width: 380px; max-width: 90vw;"):
                     ui.label("Set your encryption passphrase").classes("text-h6")
                     ui.label(
                         "This passphrase will be used to encrypt your files. It cannot be recovered if lost."
@@ -131,15 +131,22 @@ async def index(request: Request) -> None:
                         else:
                             error_label.visible = True
 
-                    ui.button(
-                        "Set Passphrase",
-                        on_click=set_encryption_password,
-                    ).props("color=black").style("margin-top: 10px;")
+                    with ui.row().classes("justify-end w-full"):
+                        ui.button(
+                            "Set Passphrase",
+                            on_click=set_encryption_password,
+                        ).props("color=black").style("margin-top: 10px;")
                 dialog.open()
         else:
             with ui.dialog().props("persistent") as dialog:
-                with ui.card():
-                    ui.label("Enter your encryption passphrase").classes("text-h6")
+                with ui.card().style("min-width: 380px; max-width: 90vw;"):
+                    with ui.row().classes("items-center justify-between w-full"):
+                        ui.label("Enter your encryption passphrase").classes("text-h6")
+                        passphrase_help = ui.icon("help_outline").classes(
+                            "text-grey-6 cursor-pointer"
+                        ).style("font-size: 20px;")
+                        passphrase_help.tooltip("Help with your encryption passphrase")
+                        passphrase_help.on("click", lambda: help_password())
                     password_input = ui.input(
                         "Encryption Passphrase", password=True
                     ).style("width: 100%; margin-bottom: 10px;")
@@ -178,27 +185,26 @@ async def index(request: Request) -> None:
                                 ).classes("text-subtitle2").style(
                                     "margin-bottom: 10px;"
                                 )
-                                with ui.row().classes("justify-between w-full"):
+                                with ui.row().classes("justify-end w-full gap-2"):
                                     ui.button(
-                                        "Close", on_click=lambda: ui.navigate.to("/")
-                                    ).props("color=black").style("margin-top: 10px;")
+                                        "Close", on_click=lambda: help_dialog.close()
+                                    ).classes("button-close").props(
+                                        "color=black flat"
+                                    ).style("margin-top: 10px; width: auto; min-width: 200px; white-space: nowrap;")
                                     ui.button(
                                         "Reset Passphrase",
                                         on_click=lambda: reset_password(),
-                                    ).props("color=red").style("margin-top: 10px;")
+                                    ).classes("delete-style").props(
+                                        "color=black flat"
+                                    ).style("margin-top: 10px; width: auto; min-width: 200px; white-space: nowrap;")
 
                             help_dialog.open()
 
-                    with ui.row().classes("justify-between w-full"):
+                    with ui.row().classes("justify-end w-full"):
                         ui.button(
                             "Unlock",
                             on_click=verify_encryption_password,
-                        ).props(
-                            "color=black"
-                        ).style("margin-top: 10px;")
-                        ui.button("Help", on_click=help_password).props(
-                            "color=red"
-                        ).style("margin-top: 10px;")
+                        ).props("color=black").style("margin-top: 10px;")
                 dialog.open()
 
     else:
