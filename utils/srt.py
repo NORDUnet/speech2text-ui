@@ -1348,6 +1348,7 @@ class SRTEditor:
         self.update_words_per_minute()
         self.refresh_display(force_full_refresh=True)
 
+
     def create_caption_card(self, caption: SRTCaption) -> ui.card:
         """
         Create a visual card for a caption.
@@ -1382,16 +1383,7 @@ class SRTEditor:
                             "font-bold text-sm text-gray-500"
                         )
 
-                        if self.data_format == "txt":
-                            speaker_select = ui.select(
-                                options=list(self.speakers),
-                                value=caption.speaker,
-                                with_input=True,
-                                label="Speaker",
-                                new_value_mode="add",
-                            )
-                        else:
-                            speaker_select = None
+                        speaker_select = None
 
                         start_input = ui.input("", value=caption.start_time).props(
                             "dense borderless"
@@ -1630,7 +1622,7 @@ class SRTEditor:
                             with_input=True,
                             label="Speaker",
                             new_value_mode="add",
-                        )
+                        ).bind_value(caption, 'speaker')
                     else:
                         speaker_select = None
 
