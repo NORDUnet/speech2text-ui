@@ -189,26 +189,22 @@ def create() -> None:
                             ),
                         )
 
-                    save_button.props("color=black flat")
+                    save_button.props("flat", remove="color")
 
                 # Export button - opens dialog
-                ui.button("Export", icon="download").props("flat color=black").on(
+                ui.button("Export", icon="download").props("flat", remove="color").on(
                     "click", lambda: editor.show_export_dialog(filename)
                 )
 
                 if data_format == "srt":
-                    with ui.button("Validate", icon="check").props(
-                        "flat color=black"
-                    ) as validate_button:
+                    with ui.button("Validate", icon="check").props("flat", remove="color") as validate_button:
                         validate_button.on(
                             "click",
                             lambda: editor.validate_captions(),
                         )
                 editor.create_search_panel()
                 editor.show_keyboard_shortcuts()
-            with ui.button("Close editor", icon="close").props(
-                "flat color=black"
-            ) as close_button:
+            with ui.button("Close editor", icon="close").props("flat", remove="color") as close_button:
                 close_button.on("click", lambda: editor.close_editor("/home"))
 
         with ui.splitter(value=60).classes("w-full h-full") as splitter:
@@ -241,7 +237,9 @@ def create() -> None:
                         autoscroll.on(
                             "click", lambda: editor.set_autoscroll(autoscroll.value)
                         )
-                        with ui.column().classes("bg-gray-100 p-4 w-full"):
+                        with ui.column().classes("p-4 w-full").style(
+                            "background-color: var(--color-bg-surface-alt); border-radius: 4px;"
+                        ):
                             ui.label(filename).classes("text-h6").style(
                                 "align-self: center;"
                             )

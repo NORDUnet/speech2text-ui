@@ -45,9 +45,7 @@ class Group:
                 ).classes("text-subtitle2").style("margin-bottom: 10px;")
 
                 with ui.row().classes("justify-between w-full"):
-                    ui.button("Cancel", on_click=lambda: delete_group_dialog.close()).props(
-                        "color=black"
-                    )
+                    ui.button("Cancel", on_click=lambda: delete_group_dialog.close()).props("color=black")
                     ui.button(
                         "Delete",
                         on_click=lambda: (
@@ -106,9 +104,7 @@ class Group:
                     edit = ui.button("Edit").classes("button-edit").props(
                         "color=white flat"
                     ).style("width: 100%")
-                    delete = ui.button("Delete").classes("button-close").props(
-                        "color=black flat"
-                    ).style("width: 100%")
+                    delete = ui.button("Delete").classes("button-close").props("flat", remove="color").style("width: 100%")
 
                     edit.on(
                         "click",

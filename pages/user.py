@@ -41,7 +41,7 @@ def show_user_token() -> None:
             token = app.storage.user.get("token", "No token found.")
             ui.textarea(value=token).classes("w-full h-full")
             with ui.row().style("justify-content: flex-end; width: 100%;"):
-                ui.button("Close").classes("button-close").props("color=black flat").on(
+                ui.button("Close").classes("button-close").props("flat", remove="color").on(
                     "click", lambda: dialog.close()
                 )
 
@@ -123,7 +123,7 @@ def create() -> None:
             ).style("min-width: 300px;")
 
             save = ui.button("Test and save")
-            save.props("color=black flat")
+            save.props("flat", remove="color")
             save.classes("default-style")
             save.on("click", lambda: email_save(email.value))
 
@@ -158,6 +158,32 @@ def create() -> None:
                         "" if e.value == inherit_label else e.value
                     )
                 )
+
+        # -- Appearance section --
+        ui.label("Appearance").classes("text-lg font-semibold mb-2")
+        ui.separator()
+
+        appearance_dark = ui.dark_mode(app.storage.user.get("dark_mode", None))
+        raw_dark = app.storage.user.get("dark_mode", None)
+        current_dark = "auto" if raw_dark is None else ("dark" if raw_dark else "light")
+
+        def set_dark_mode(value: str) -> None:
+            # "auto" -> None (follow system), "dark" -> True, "light" -> False
+            new_val = None if value == "auto" else (value == "dark")
+            app.storage.user["dark_mode"] = new_val
+            appearance_dark.value = new_val
+
+        with ui.column().classes("gap-2 mt-2 mb-6"):
+            ui.label(
+                "Colour theme. Auto follows your system setting."
+            ).classes("text-sm text-gray-500")
+            with ui.row().classes("items-center gap-3"):
+                ui.icon("contrast", color="black").style("font-size: 20px;")
+                ui.toggle(
+                    {"light": "Light", "dark": "Dark", "auto": "Auto"},
+                    value=current_dark,
+                    on_change=lambda e: set_dark_mode(e.value),
+                ).props("no-caps")
 
         # -- Notifications section --
         ui.label("Notifications").classes("text-lg font-semibold mb-2")

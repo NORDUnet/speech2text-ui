@@ -76,6 +76,9 @@ async def index(request: Request) -> None:
 
     app.storage.user["timezone"] = timezone
 
+    # Apply the saved colour theme (None = auto/follow system).
+    ui.dark_mode(app.storage.user.get("dark_mode", None))
+
     if (
         app.storage.user.get("token")
         and app.storage.user.get("refresh_token")
@@ -189,13 +192,13 @@ async def index(request: Request) -> None:
                                     ui.button(
                                         "Close", on_click=lambda: help_dialog.close()
                                     ).classes("button-close").props(
-                                        "color=black flat"
+                                        "flat"
                                     ).style("margin-top: 10px; width: auto; min-width: 200px; white-space: nowrap;")
                                     ui.button(
                                         "Reset Passphrase",
                                         on_click=lambda: reset_password(),
                                     ).classes("delete-style").props(
-                                        "color=black flat"
+                                        "flat"
                                     ).style("margin-top: 10px; width: auto; min-width: 200px; white-space: nowrap;")
 
                             help_dialog.open()
@@ -218,9 +221,11 @@ async def index(request: Request) -> None:
         is_not_activated = has_token and not get_user_status()
 
         with ui.column().classes("w-full h-screen items-center justify-center"):
-            with ui.card().style(
-                "width: 500px; max-width: 90%; padding: 40px; border: 0; box-shadow: none;"
-            ):
+            # No card/background here — keep the landing page seamless on the
+            # page background (matches the dark theme without a grey box).
+            with ui.column().style(
+                "width: 500px; max-width: 90%; padding: 40px;"
+            ).classes("items-center"):
                 with ui.column().classes("w-full items-center gap-4"):
                     ui.image(f"static/{settings.LOGO_LANDING}").style(
                         f"max-width: {settings.LOGO_LANDING_WIDTH}px; height: auto;"
@@ -256,7 +261,7 @@ async def index(request: Request) -> None:
                                 "Logout",
                                 icon="logout",
                                 on_click=lambda: ui.navigate.to("/logout"),
-                            ).props("flat color=black").classes("button-close")
+                            ).props("flat").classes("button-close")
                     else:
                         ui.button(
                             "Login with SSO",

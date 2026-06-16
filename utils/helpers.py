@@ -143,13 +143,13 @@ def reset_password() -> None:
                 ui.button(
                     "Cancel",
                     on_click=lambda: dialog.close(),
-                ).classes("button-close").props("color=black flat").style(
+                ).classes("button-close").props("flat", remove="color").style(
                     "margin-top: 10px; width: auto; min-width: 200px; white-space: nowrap;"
                 )
                 ui.button(
                     "Reset Passphrase",
                     on_click=lambda: do_reset(),
-                ).classes("delete-style").props("color=black flat").style(
+                ).classes("delete-style").props("flat", remove="color").style(
                     "margin-top: 10px; width: auto; min-width: 200px; white-space: nowrap;"
                 )
         dialog.open()
@@ -515,9 +515,7 @@ def save_group(
             with ui.card():
                 ui.label("Error saving group").classes("text-h6")
                 ui.label(error["error"])
-                ui.button("Close", on_click=lambda: dialog.close()).props(
-                    "color=black"
-                ).style("margin-top: 10px;")
+                ui.button("Close", on_click=lambda: dialog.close()).props("color=black").style("margin-top: 10px;")
 
         dialog.open()
 
@@ -673,13 +671,9 @@ def open_make_admin_dialog(selected_rows: list, all_users: list) -> None:
                     ui.notify(str(e), type="negative")
 
             with ui.row().style("justify-content: flex-end; width: 100%;"):
-                ui.button("Cancel").classes("button-close").props(
-                    "color=black flat"
-                ).on("click", lambda: admin_dialog.close())
+                ui.button("Cancel").classes("button-close").props("flat", remove="color").on("click", lambda: admin_dialog.close())
 
-                ui.button("Save").classes("default-style").props(
-                    "color=black flat"
-                ).on("click", on_save)
+                ui.button("Save").classes("default-style").props("flat", remove="color").on("click", on_save)
 
         admin_dialog.open()
 
@@ -799,10 +793,8 @@ def set_domains(selected_rows: list, all_users: list) -> None:
             )
 
             with ui.row().style("justify-content: flex-end; width: 100%;"):
-                ui.button("Cancel").classes("button-close").props(
-                    "color=black flat"
-                ).on("click", lambda: domain_dialog.close())
-                ui.button("Save").classes("default-style").props("color=black flat").on(
+                ui.button("Cancel").classes("button-close").props("flat", remove="color").on("click", lambda: domain_dialog.close())
+                ui.button("Save").classes("default-style").props("flat", remove="color").on(
                     "click",
                     lambda: save_domains(
                         selected_rows,

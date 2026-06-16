@@ -151,7 +151,7 @@ class SRTEditor:
             )
 
             with ui.row().classes("w-full justify-end gap-2"):
-                ui.button("Cancel", on_click=handle_cancel).props("flat")
+                ui.button("Cancel", on_click=handle_cancel).props("flat", remove="color")
                 ui.button("Discard", on_click=handle_discard).props("flat color=red")
                 ui.button("Save", on_click=handle_save).props("color=primary")
 
@@ -230,7 +230,7 @@ class SRTEditor:
         if self.undo_button:
             if self.undo_redo_manager.can_undo():
                 self.undo_button.enable()
-                self.undo_button.props("flat dense color=black")
+                self.undo_button.props("flat dense", remove="color")
             else:
                 self.undo_button.disable()
                 self.undo_button.props("flat dense color=grey")
@@ -238,7 +238,7 @@ class SRTEditor:
         if self.redo_button:
             if self.undo_redo_manager.can_redo():
                 self.redo_button.enable()
-                self.redo_button.props("flat dense color=black")
+                self.redo_button.props("flat dense", remove="color")
             else:
                 self.redo_button.disable()
                 self.redo_button.props("flat dense color=grey")
@@ -1120,9 +1120,7 @@ class SRTEditor:
                             .props("outlined dense clearable")
                         )
 
-                        ui.button(icon="search").props(
-                            "flat dense round color=black"
-                        ).on(
+                        ui.button(icon="search").props("flat dense round", remove="color").on(
                             "click", lambda: self.search_captions(search_input.value)
                         ).tooltip(
                             "Find"
@@ -1142,16 +1140,12 @@ class SRTEditor:
 
                         # Navigation + info
                         with ui.row().classes("items-center gap-1"):
-                            ui.button(icon="keyboard_arrow_up").props(
-                                "flat dense round color=black"
-                            ).on(
+                            ui.button(icon="keyboard_arrow_up").props("flat dense round", remove="color").on(
                                 "click", lambda: self.navigate_search_results(-1)
                             ).tooltip(
                                 "Previous match"
                             )
-                            ui.button(icon="keyboard_arrow_down").props(
-                                "flat dense round color=black"
-                            ).on(
+                            ui.button(icon="keyboard_arrow_down").props("flat dense round", remove="color").on(
                                 "click", lambda: self.navigate_search_results(1)
                             ).tooltip(
                                 "Next match"
@@ -1176,21 +1170,21 @@ class SRTEditor:
                     )
 
                     with ui.row().classes("w-full justify-end gap-2"):
-                        ui.button("Replace").props("flat dense color=black").on(
+                        ui.button("Replace").props("flat dense", remove="color").on(
                             "click",
                             lambda: self.replace_in_current_caption(
                                 replace_input.value
                             ),
                         )
 
-                        ui.button("Replace all").props("flat dense color=black").on(
+                        ui.button("Replace all").props("flat dense", remove="color").on(
                             "click", lambda: self.replace_all(replace_input.value)
                         )
 
                 ui.separator().classes("my-3")
 
                 with ui.row().classes("w-full justify-end"):
-                    ui.button("Close").props("flat dense color=black").on(
+                    ui.button("Close").props("flat dense", remove="color").on(
                         "click", self.search_container.close
                     )
 
@@ -1203,7 +1197,7 @@ class SRTEditor:
         if open_window:
             self.search_container.open()
         else:
-            ui.button("Search").props("icon=search flat dense color=black").on(
+            ui.button("Search").props("icon=search flat dense", remove="color").on(
                 "click", lambda: self.search_container.open()
             ).classes("button-open-search")
 
@@ -1950,7 +1944,7 @@ class SRTEditor:
         if open_window:
             dialog.open()
         else:
-            ui.button("Shortcuts").props("icon=keyboard flat dense color=black").on(
+            ui.button("Shortcuts").props("icon=keyboard flat dense", remove="color").on(
                 "click", lambda: dialog.open()
             ).classes("button-open-search")
 
@@ -1988,7 +1982,7 @@ class SRTEditor:
                 # Header
                 with ui.row().classes("w-full items-center justify-between mb-4"):
                     ui.label("Export transcript").classes(
-                        "text-h5 font-bold text-black"
+                        "text-h5 font-bold"
                     )
                     ui.button(icon="close", on_click=dialog.close).props(
                         "flat round dense color=grey-7"
@@ -2542,9 +2536,7 @@ class SRTEditor:
                     else:
                         ui.label(f"File: {Path(filename).stem}.{fmt.value}").classes("text-body2")
                     with ui.row().classes("gap-2"):
-                        ui.button("Close", on_click=dialog.close).props(
-                            "outline color=black"
-                        )
+                        ui.button("Close", on_click=dialog.close).props("outline", remove="color")
 
                         def exp():
                             try:
