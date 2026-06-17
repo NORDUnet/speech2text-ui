@@ -810,12 +810,14 @@ def page_init(header_text: Optional[str] = "", use_drawer: bool = False) -> None
                         "Close menu" if drawer_open else "Expand menu"
                     )
                     menu_btn_tooltip_ref = menu_btn_tooltip
-                ui.image(f"static/{settings.LOGO_TOPBAR}").classes("q-mr-sm").style(
-                    "height: 30px; width: 30px;"
+                ui.image(f"static/{settings.LOGO_TOPBAR}").classes(
+                    "q-mr-sm cursor-pointer"
+                ).style("height: 30px; width: 30px;").on(
+                    "click", lambda: ui.navigate.to("/home")
                 )
                 ui.label(settings.TOPBAR_TEXT + header_text).classes(
-                    "text-h6"
-                )
+                    "text-h6 cursor-pointer"
+                ).on("click", lambda: ui.navigate.to("/home"))
 
             with ui.element("div").style("display: flex; gap: 0px;"):
                 with ui.button(
@@ -842,12 +844,14 @@ def page_init(header_text: Optional[str] = "", use_drawer: bool = False) -> None
             .classes("drop-shadow-md")
         ):
             with ui.element("div").style("display: flex; gap: 0px;"):
-                ui.image(f"static/{settings.LOGO_TOPBAR}").classes("q-mr-sm").style(
-                    "height: 30px; width: 30px;"
+                ui.image(f"static/{settings.LOGO_TOPBAR}").classes(
+                    "q-mr-sm cursor-pointer"
+                ).style("height: 30px; width: 30px;").on(
+                    "click", lambda: ui.navigate.to("/home")
                 )
                 ui.label(settings.TOPBAR_TEXT + header_text).classes(
-                    "text-h6"
-                )
+                    "text-h6 cursor-pointer"
+                ).on("click", lambda: ui.navigate.to("/home"))
 
             with ui.element("div").style("display: flex; gap: 0px;"):
                 if is_admin:
