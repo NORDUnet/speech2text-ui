@@ -2984,7 +2984,7 @@ def announcements_page() -> None:
                 <q-toggle
                     :model-value="props.row.enabled"
                     @update:model-value="$parent.$emit('toggle_enabled', props.row)"
-                    color="black"
+                    color="positive"
                 />
             </q-td>
             """,

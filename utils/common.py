@@ -243,6 +243,38 @@ default_styles = """
         .body--dark .q-toggle {
             --q-positive: var(--color-btn-blue-bg) !important;
         }
+        /* Announcement banners set light pastel backgrounds + dark text/icon
+           inline (good for light mode). In dark mode, give each severity a dark
+           tint with light text so the bar fits the theme. Overrides the inline
+           styles via !important; keyed off the .severity-* classes. */
+        .body--dark .announcement-banner.severity-info {
+            background-color: #1a5490 !important;
+            border-bottom-color: #2e74ad !important;
+        }
+        .body--dark .announcement-banner.severity-maintenance {
+            background-color: #6f4f18 !important;
+            border-bottom-color: #a07a2c !important;
+        }
+        .body--dark .announcement-banner.severity-major_incident {
+            background-color: #7a2727 !important;
+            border-bottom-color: #ab3a3a !important;
+        }
+        .body--dark .announcement-banner.severity-info,
+        .body--dark .announcement-banner.severity-info * {
+            color: #d6e9ff !important;
+        }
+        .body--dark .announcement-banner.severity-maintenance,
+        .body--dark .announcement-banner.severity-maintenance * {
+            color: #ffdca8 !important;
+        }
+        .body--dark .announcement-banner.severity-major_incident,
+        .body--dark .announcement-banner.severity-major_incident * {
+            color: #ffc4c4 !important;
+        }
+        .body--dark .announcement-banner a {
+            color: #9cc4ff !important;
+            text-decoration: underline;
+        }
         .default-style {
             background-color: var(--color-primary-btn-bg);
             color: var(--color-primary-btn-text) !important;
