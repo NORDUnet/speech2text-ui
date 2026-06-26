@@ -259,5 +259,9 @@ def create() -> None:
                                 "align-self: center;"
                             )
                             editor.render_speakers()
-                            ui.button("Prune", on_click=editor.prune_speakers).props("outline color=black").classes("text-black")
+                            with ui.button("Prune", on_click=editor.prune_speakers).props("outline color=black").classes("text-black prune-btn"):
+                                ui.tooltip(
+                                    "Remove speakers that are not assigned "
+                                    "to any caption."
+                                )
                     

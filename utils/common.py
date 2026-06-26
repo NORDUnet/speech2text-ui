@@ -124,21 +124,32 @@ default_styles = """
         /* ── Theme variables (dark) ── */
         .body--dark {
             --color-bg-page: #121212;
-            --color-bg-surface: #1e1e1e;
+            --color-bg-surface: #000000;
             --color-bg-surface-alt: #181818;
             --color-bg-hover: #333333;
             --color-control-bg: #2d2d2d;
             --color-header-bg: #1e1e1e;
             --color-text-primary: #ffffff;
             --color-text-muted: #b0b0b0;
+            /* Tailwind v4 builds .text-gray-N as `color: var(--color-gray-N)`
+               inside a cascade @layer, so a scoped property override is
+               unreliable. Redefining the variables globally in dark mode makes
+               every .text-gray-* render white regardless of DOM context.
+               Shades 400-800 are used only for text here; gray-900 is also used
+               as bg-gray-900, so it is recoloured scoped to text elsewhere. */
+            --color-gray-400: #ffffff;
+            --color-gray-500: #ffffff;
+            --color-gray-600: #ffffff;
+            --color-gray-700: #ffffff;
+            --color-gray-800: #ffffff;
             --color-brand: #5b9bd5;
             --color-accent: #2e7d32;
             --color-on-accent: #ffffff;
             --color-on-brand: #ffffff;
-            /* Primary action buttons + solid blue buttons: SUNET blue, white text */
-            --color-primary-btn-bg: #1a4a7a;
+            /* Primary action buttons + solid blue buttons: NORDUnet blue, white text */
+            --color-primary-btn-bg: #005eb8;
             --color-primary-btn-text: #ffffff;
-            --color-btn-blue-bg: #1a4a7a;
+            --color-btn-blue-bg: #005eb8;
             --color-delete-text: #ff8a80;
             --color-border: #5a5a5a;
             --color-disabled-bg: #333333;
@@ -150,12 +161,13 @@ default_styles = """
            A stylesheet !important beats inline styles set without !important,
            so these flip the app's hardcoded white surfaces/black text without
            having to edit every element. */
-        /* The theme picker's selected segment is a Quasar bg-primary button.
-           Quasar's `.bg-primary { ... !important }` lives in a cascade @layer,
-           and a layered !important beats an unlayered one regardless of
-           specificity — so overriding the property doesn't work. Instead
-           override the variable it reads (--q-primary), scoped to the toggle
-           so links/radios elsewhere keep the default primary. */
+        /* Buttons with color="primary" (the theme picker's selected segment and
+           various dialog Save/Close/Test buttons) render via Quasar's bg-primary
+           / text-primary, whose `!important` lives in a cascade @layer and beats
+           an unlayered override regardless of specificity. So instead of fighting
+           the property, point the variable they read (--q-primary) at the brand
+           blue — scoped to buttons so links/radios elsewhere keep Quasar's primary. */
+        .body--dark .q-btn,
         .body--dark .q-btn-toggle,
         .body--dark .q-btn-toggle .q-btn[aria-pressed="true"] {
             --q-primary: var(--color-btn-blue-bg) !important;
@@ -181,15 +193,27 @@ default_styles = """
             background-color: var(--color-bg-surface) !important;
             color: var(--color-text-primary);
         }
+        /* The customer expansion carries `text-bold` to bold its header label,
+           which also bolds every card inside it. Reset the expansion content to
+           normal weight so grouped cards match the ungrouped "All users" card —
+           only each card's own font-bold/font-semibold parts (name, "Statistics",
+           "This month"/"Last month") stay bold. */
+        .q-expansion-item__content {
+            font-weight: 400;
+        }
+        /* gray-400..800 are recoloured via global vars above; gray-900 is kept
+           scoped here so bg-gray-900 (used as a dark surface) is unaffected.
+           The color declaration is a fallback for the case the Tailwind utility
+           is built without !important. */
         .body--dark .text-black,
         .body--dark .text-gray-900,
         .body--dark .text-gray-800,
-        .body--dark .text-gray-700 {
-            color: var(--color-text-primary) !important;
-        }
+        .body--dark .text-gray-700,
         .body--dark .text-gray-600,
-        .body--dark .text-gray-500 {
-            color: var(--color-text-muted) !important;
+        .body--dark .text-gray-500,
+        .body--dark .text-gray-400 {
+            --color-gray-900: #ffffff;
+            color: var(--color-text-primary) !important;
         }
         /* Icons/labels whose colour is set inline to black (NiceGUI renders
            color="black" as an inline style, not a class). */
@@ -204,6 +228,20 @@ default_styles = """
         .q-chip {
             background-color: var(--color-accent) !important;
             color: var(--color-on-accent) !important;
+        }
+        /* Selected-value chips (e.g. allowed-domains select) default to the
+           accent colour, which is green in dark mode. Use the same muted navy as
+           selected table rows so they fit the theme. Dark mode only — light mode
+           keeps the accent. */
+        .body--dark .q-chip {
+            background-color: #1b3a5e !important;
+            color: #ffffff !important;
+        }
+        /* "Enabled" toggles use color="positive" (green). Recolour to NORDUnet
+           blue in dark mode by overriding the variable Quasar's positive colour
+           reads. Light mode keeps green. */
+        .body--dark .q-toggle {
+            --q-positive: var(--color-btn-blue-bg) !important;
         }
         .default-style {
             background-color: var(--color-primary-btn-bg);
@@ -232,6 +270,95 @@ default_styles = """
         .table-style tr {
             font-size: 14px;
         }
+        /* Editor caption action buttons (Split / Merge / Close / Add) are flat
+           text buttons; the brand blue #005eb8 reads muddy as thin text on the
+           black editor, so use a lightened NORDUnet blue here for legibility.
+           Direct, higher-specificity rule beats Quasar's unlayered .text-primary
+           (and sidesteps the inline --q-primary the buttons inherit). */
+        .body--dark .caption-btn-row .q-btn:not(.caption-delete-btn) {
+            --q-primary: #2d8fe0 !important;
+        }
+        /* Editor "Delete" caption button: keep it red but brighter so it stands
+           out on the black editor like the blue buttons do. Quasar's .text-red
+           is unlayered !important, so a higher-specificity dark rule wins. */
+        .body--dark .caption-delete-btn {
+            color: #ff5252 !important;
+        }
+        /* Help dialog: the outer card hardcodes a white gradient background, so
+           in dark mode it shows as a white dialog while the global .q-card rule
+           forces the inner cards black — black boxes on white. Give the dialog a
+           dark surface, raise the inner cards onto a slightly lighter surface,
+           and force the dim step text (text-grey-8) white. The `background`
+           shorthand with !important also clears the inline white gradient.
+           All scoped to dark mode; light mode keeps the gradient + grey text. */
+        .body--dark .q-card.help-dialog {
+            background: var(--color-bg-surface) !important;
+        }
+        .body--dark .help-dialog .q-card {
+            background: var(--color-bg-surface-alt) !important;
+        }
+        .body--dark .help-dialog .text-grey-8 {
+            color: var(--color-text-primary) !important;
+        }
+        /* Keyboard-shortcuts dialog key chips use Tailwind bg-gray-100, which
+           stays light grey in dark mode → near-white text on light grey,
+           illegible. Override the variable bg-gray-100 reads (scoped to the chip)
+           so it gets a dark surface in dark mode. Light mode keeps grey-100. */
+        .body--dark .kbd-key {
+            --color-gray-100: var(--color-control-bg);
+        }
+        /* "Prune" speakers button is an outline button forced to color=black
+           (.text-black), making it black-on-black (invisible) in dark mode.
+           Tailwind v4 builds .text-black as `color: var(--color-black)` inside a
+           cascade @layer with !important, which beats an unlayered override — so
+           recolour the variable it reads (scoped to this button) rather than the
+           property. The outline border uses currentColor, so this reveals both
+           the label and the border. Light mode keeps text-black (black). */
+        .body--dark .prune-btn {
+            --color-black: #ffffff;
+            color: var(--color-text-primary) !important;
+        }
+        /* Row hover: brighter than Quasar's default so the hovered line clearly
+           stands out on dark tables (My files, admin lists, group statistics).
+           Excludes selected rows so the navy selection isn't overridden. */
+        .body--dark .q-table tbody tr:not(.selected):hover,
+        .body--dark .q-table tbody tr:not(.selected):hover > td {
+            background-color: #454545 !important;
+        }
+        /* Toggle (e.g. the appearance Light/Dark/Auto picker) hover: same
+           brighter grey as the table row hover so it clearly stands out,
+           instead of Quasar's faint default. The selected segment keeps its
+           blue (excluded via aria-pressed). */
+        .body--dark .q-btn-toggle .q-btn:not([aria-pressed="true"]):hover {
+            background-color: #454545 !important;
+        }
+        /* Plotly charts use template="plotly_white" — a baked white background
+           with dark text, jarring/illegible in dark mode. Make the chart
+           backgrounds transparent so the dark card shows through, and recolour
+           the text and gridlines. Bar/line trace colours are left intact.
+           CSS beats Plotly's inline SVG styling, and this covers every chart
+           (stats, health, heatmaps) in all modes. Dark mode only. */
+        .body--dark .js-plotly-plot .bg {
+            fill: transparent !important;
+        }
+        .body--dark .js-plotly-plot .main-svg {
+            background-color: transparent !important;
+        }
+        .body--dark .js-plotly-plot text {
+            fill: var(--color-text-primary) !important;
+        }
+        .body--dark .js-plotly-plot .gridlayer path,
+        .body--dark .js-plotly-plot .zerolinelayer path {
+            stroke: #3a3a3a !important;
+        }
+        /* Selected rows: muted navy — keeps the NORDUnet-blue identity but at low
+           saturation so a full-width selected row reads as highlighted rather
+           than a loud blue slab, and stays easy on the eyes in dark mode.
+           Applies to all selectable tables (My files, edit group, admin lists). */
+        .body--dark .q-table tbody tr.selected,
+        .body--dark .q-table tbody tr.selected > td {
+            background-color: #1b3a5e !important;
+        }
         .cancel-style {
             background-color: var(--color-control-bg);
             color: var(--color-text-primary) !important;
@@ -247,6 +374,11 @@ default_styles = """
             background-color: var(--color-bg-surface-alt);
             color: var(--color-text-muted);
             transition: background-color 0.15s;
+        }
+        /* Dropzone prompt text: muted grey is too dim on the dark dropzone —
+           use the primary (white) text colour so it stands out. Dark mode only. */
+        .body--dark .upload-dropzone {
+            color: var(--color-text-primary);
         }
         .upload-dropzone:hover,
         .upload-dropzone.dragover {
@@ -363,7 +495,7 @@ def show_help_dialog() -> None:
             .style(
                 "max-width: 900px; padding: 32px; background: linear-gradient(to bottom, #ffffff 0%, #f8f9fa 100%);"
             )
-            .classes("no-shadow")
+            .classes("no-shadow help-dialog")
         ):
             with ui.row().classes("w-full items-center justify-between mb-6"):
                 ui.label("Help & Documentation").classes("text-h4 font-bold")
@@ -624,6 +756,32 @@ def page_init(header_text: Optional[str] = "", use_drawer: bool = False) -> None
     # Stored per session in app.storage.user and applied live (no page reload).
     dark = ui.dark_mode(app.storage.user.get("dark_mode", None))
 
+    # The "Prune" outline button is forced to color=black (.text-black). In dark
+    # mode that black is set by an adopted/layered Quasar rule that outranks any
+    # stylesheet override we can inject, so enforce visibility with an inline
+    # !important colour (the only thing that always wins) — applied solely when
+    # body--dark is active, so light mode is untouched. Re-runs on theme toggle
+    # and DOM changes (the button re-renders when speakers change).
+    ui.add_head_html(
+        "<script>(function(){function fix(){var d=document.body.classList."
+        "contains('body--dark');document.querySelectorAll('.prune-btn,"
+        " .help-dialog .text-grey-8, .upload-status, .upload-spinner,"
+        " .simulate-dialog .text-grey-7, .simulate-dialog .text-grey-8')."
+        "forEach(function(b){if(d){b.style.setProperty('color','#ffffff',"
+        "'important');}else{b.style.removeProperty('color');}});"
+        "document.querySelectorAll('.row-action-btn').forEach(function(b){"
+        "if(d){b.style.setProperty('background-color','#e0e0e0','important');"
+        "b.style.setProperty('color','#000000','important');}else{"
+        "b.style.removeProperty('background-color');b.style.removeProperty('color');}});"
+        "document.querySelectorAll('.add-attr-btn').forEach(function(b){"
+        "if(d){b.style.setProperty('color','#2d8fe0','important');}else{"
+        "b.style.removeProperty('color');}});}"
+        "if(!window.__pruneFixObs){window.__pruneFixObs=new MutationObserver(fix);"
+        "window.__pruneFixObs.observe(document.documentElement,{attributes:true,"
+        "attributeFilter:['class'],childList:true,subtree:true});}fix();"
+        "setTimeout(fix,150);setTimeout(fix,600);})();</script>"
+    )
+
     def _dark_icon(val) -> str:
         if val is None:
             return "brightness_auto"
@@ -758,7 +916,17 @@ def page_init(header_text: Optional[str] = "", use_drawer: bool = False) -> None
                     ).on(
                         "click",
                         lambda: ui.run_javascript(
-                            f"window.open('{settings.API_URL}/api/docs', '_blank')"
+                            "window.open('"
+                            + settings.API_URL
+                            + "/api/docs?theme="
+                            + (
+                                "dark"
+                                if app.storage.user.get("dark_mode") is True
+                                else "light"
+                                if app.storage.user.get("dark_mode") is False
+                                else "auto"
+                            )
+                            + "', '_blank')"
                         ),
                     ):
                         ui.icon("description", color="black").style("font-size: 20px;")
@@ -1092,9 +1260,9 @@ def table_upload(table) -> None:
             with ui.column().classes("w-full items-center") as status_column:
                 ui.label("Uploading files").classes("text-h6 q-mb-sm")
                 status_label = ui.label("Please wait...").classes(
-                    "text-body1 q-mb-lg text-grey-7"
+                    "text-body1 q-mb-lg text-grey-7 upload-status"
                 )
-                ui.spinner(size="50px", color="black")
+                ui.spinner(size="50px", color="black").classes("upload-spinner")
                 status_column.visible = False
 
             with ui.column().classes("w-full items-center mt-10") as upload_column:

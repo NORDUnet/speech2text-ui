@@ -1411,7 +1411,7 @@ class SRTEditor:
 
                     # Action buttons
                     # Row with buttons to the left
-                    with ui.row().classes("w-full justify-between"):
+                    with ui.row().classes("w-full justify-between caption-btn-row"):
                         ui.button("Split", icon="call_split").props(
                             "flat dense"
                         ).on("click", lambda: self.split_caption(caption))
@@ -1450,7 +1450,9 @@ class SRTEditor:
                             "click", lambda: self.add_caption_after(caption)
                         )
 
-                        ui.button("Delete", color="red").props("flat dense").on(
+                        ui.button("Delete", color="red").props("flat dense").classes(
+                            "caption-delete-btn"
+                        ).on(
                             "click", lambda: self.remove_caption(caption)
                         )
                 else:
@@ -1649,7 +1651,7 @@ class SRTEditor:
                     "blur", lambda e: self.update_caption_text(caption, e.sender.value)
                 )
 
-                with ui.row().classes("w-full justify-between"):
+                with ui.row().classes("w-full justify-between caption-btn-row"):
                     ui.button("Split", icon="call_split").props(
                         "flat dense"
                     ).on("click", lambda: self.split_caption(caption))
@@ -1685,7 +1687,9 @@ class SRTEditor:
                         "click", lambda: self.add_caption_after(caption)
                     )
 
-                    ui.button("Delete", color="red").props("flat dense").on(
+                    ui.button("Delete", color="red").props("flat dense").classes(
+                        "caption-delete-btn"
+                    ).on(
                         "click", lambda: self.remove_caption(caption)
                     )
             else:
@@ -1911,7 +1915,7 @@ class SRTEditor:
 
                 # Footer
                 with ui.row().classes("w-full justify-end mt-4").style(
-                    "position: sticky; bottom: -24px; background: white; padding-bottom: 8px; z-index: 1;"
+                    "position: sticky; bottom: -24px; background: var(--color-bg-surface); padding-bottom: 8px; z-index: 1;"
                 ):
                     ui.button("Close", on_click=dialog.close).props("color=primary")
 
@@ -1981,11 +1985,11 @@ class SRTEditor:
                                 ):
                                     ui.label(action).classes("text-body1")
                                     ui.label(keys).classes(
-                                        "text-body2 font-mono bg-gray-100 px-2 py-1 rounded"
+                                        "text-body2 font-mono bg-gray-100 px-2 py-1 rounded kbd-key"
                                     )
 
                 with ui.row().classes("w-full justify-end mt-4").style(
-                    "position: sticky; bottom: -24px; background: white; padding-bottom: 8px; z-index: 1;"
+                    "position: sticky; bottom: -24px; background: var(--color-bg-surface); padding-bottom: 8px; z-index: 1;"
                 ):
                     ui.button("Close").props("flat color=primary").on(
                         "click", dialog.close

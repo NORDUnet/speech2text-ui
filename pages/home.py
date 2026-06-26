@@ -137,6 +137,7 @@ def create() -> None:
                     :label="props.row.status === 'Completed' ? 'Edit' : 'Transcribe'"
                     color="black"
                     text-color="white"
+                    class="row-action-btn"
                     style="width: 120px; height: 40px;"
                     @click="$parent.$emit('table_handle_row_click', props.row)"
                 />

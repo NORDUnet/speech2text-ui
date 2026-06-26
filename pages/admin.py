@@ -2041,7 +2041,7 @@ def test_all_rules_dialog() -> None:
     if all_groups:
         group_names = {g["id"]: g["name"] for g in all_groups}
 
-    with ui.dialog() as dialog, ui.card().style("min-width: 600px; max-width: 800px;"):
+    with ui.dialog() as dialog, ui.card().style("min-width: 600px; max-width: 800px;").classes("simulate-dialog"):
         ui.label("Simulate provisioning").classes("text-xl font-bold")
         ui.label(
             "Enter attribute values to simulate what would happen when a user logs in."
@@ -2085,7 +2085,7 @@ def test_all_rules_dialog() -> None:
 
         ui.button(
             "Add attribute", icon="add", on_click=lambda: add_attr_row()
-        ).props("flat dense color=primary")
+        ).props("flat dense color=primary").classes("add-attr-btn")
 
         result_container = ui.column().classes("w-full mt-2")
 
