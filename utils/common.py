@@ -16,6 +16,7 @@
 # limitations under the License.
 
 import asyncio
+import glob
 import os
 import re
 import tempfile
@@ -37,7 +38,32 @@ from utils.token import (
 from utils.helpers import storage_decrypt, customers_get
 
 settings = get_settings()
+# Keep large uploads off RAM (spill to disk past the spool threshold) and route
+# the temp files to the configured upload dir, off the small root disk. The
+# directory is provisioned by ops; we only point at it.
 MultiPartParser.spool_max_size = 1024 * 1024 * settings.MULTIPART_SPOOL_MAX_SIZE_MB
+if settings.UPLOAD_TMP_DIR:
+    tempfile.tempdir = settings.UPLOAD_TMP_DIR
+
+UPLOAD_TEMP_PREFIX = "scribe-ui-upload-"
+UPLOAD_TEMP_SUFFIX = ".upload"
+
+
+def sweep_stale_uploads() -> None:
+    """
+    Remove orphaned upload temp files left behind by an unclean shutdown.
+
+    Normal uploads delete their temp file in a finally block, but a crash or
+    hard reset can leave plaintext upload temps on disk. Sweep them on startup.
+    """
+    tmp_dir = settings.UPLOAD_TMP_DIR or tempfile.gettempdir()
+    pattern = os.path.join(tmp_dir, f"{UPLOAD_TEMP_PREFIX}*{UPLOAD_TEMP_SUFFIX}")
+    for path in glob.glob(pattern):
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+
 
 def sanitize_filename(filename: str) -> str:
     """
@@ -1065,14 +1091,28 @@ async def handle_upload_with_feedback(files, dialog, table, status_label):
 
         temp_file = tempfile.NamedTemporaryFile(
             delete=False,
-            prefix="scribe-ui-upload-",
-            suffix=".upload",
+            prefix=UPLOAD_TEMP_PREFIX,
+            suffix=UPLOAD_TEMP_SUFFIX,
         )
         temp_path = temp_file.name
         temp_file.close()
 
         try:
             await file.save(temp_path)
+
+            # Enforce the per-file size limit server-side; the client-side cap is
+            # advisory and can be bypassed.
+            if os.path.getsize(temp_path) > settings.MAX_UPLOAD_BYTES:
+                os.remove(temp_path)
+                if not client._deleted:
+                    with client:
+                        ui.notify(
+                            f"{file_name} exceeds the maximum allowed size",
+                            type="negative",
+                            timeout=5000,
+                        )
+                continue
+
             file_items.append((file_name, temp_path))
         except Exception:
             if os.path.exists(temp_path):
