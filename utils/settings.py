@@ -40,6 +40,15 @@ class Settings(BaseSettings):
 
     MULTIPART_SPOOL_MAX_SIZE_MB: int = 4096
 
+    # Directory for transient upload temp files. Must be provisioned by ops with
+    # correct ownership/permissions; the app does not create it. Leave empty to
+    # use the system default temp dir.
+    UPLOAD_TMP_DIR: str = ""
+    # Maximum size of a single uploaded file, in bytes (default 4 GB).
+    MAX_UPLOAD_BYTES: int = 4 * 1024 * 1024 * 1024
+    # Maximum number of files accepted in a single upload batch.
+    MAX_UPLOAD_FILES: int = 5
+
     LOGO_LANDING: str = "sunet_logo.png"
     LOGO_LANDING_WIDTH: str = "250"
     LOGO_TOPBAR: str = "sunet_small.png"
