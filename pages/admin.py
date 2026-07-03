@@ -22,7 +22,7 @@ import re
 
 from collections import defaultdict
 from datetime import datetime
-from nicegui import ui
+from nicegui import app, ui
 from utils.common import add_timezone_to_timestamp, default_styles, page_init
 from db.analytics import (
     get_page_views,
@@ -95,12 +95,8 @@ def create_group_dialog(page: callable) -> None:
             )
 
             with ui.row().style("justify-content: flex-end; width: 100%;"):
-                ui.button("Cancel").classes("button-close").props(
-                    "color=black flat"
-                ).on("click", lambda: create_group_dialog.close())
-                ui.button("Create").classes("default-style").props(
-                    "color=black flat"
-                ).on(
+                ui.button("Cancel").classes("button-close").props("flat", remove="color").on("click", lambda: create_group_dialog.close())
+                ui.button("Create").classes("default-style").props("flat", remove="color").on(
                     "click",
                     lambda: (
                         httpx.post(
@@ -161,20 +157,16 @@ def admin_dialog(users: list, group_id: str) -> None:
             with ui.row().style(
                 "justify-content: flex-end; width: 100%; padding-top: 16px; gap: 8px;"
             ):
-                ui.button("Close").classes("button-close").props("color=black flat").on(
+                ui.button("Close").classes("button-close").props("flat", remove="color").on(
                     "click", lambda: dialog.close()
                 )
-                ui.button("Make admin").classes("default-style").props(
-    		    "color=black flat"
-		).on(
+                ui.button("Make admin").classes("default-style").props("flat", remove="color").on(
     		    "click",
                     lambda: open_make_admin_dialog(
         	       	admin_table.selected, users,
     		    ),
 		)
-                ui.button("Remove admin").classes("button-close").props(
-                    "color=black flat"
-                ).on(
+                ui.button("Remove admin").classes("button-close").props("flat", remove="color").on(
                     "click",
                     lambda: set_admin_status(
                         admin_table.selected, False, dialog, group_id
@@ -200,7 +192,7 @@ def edit_group(group_id: str) -> None:
         """
         <style>
             body {
-                background-color: #ffffff;
+                background-color: var(--color-bg-surface);
             }
         </style>
         """
@@ -229,9 +221,7 @@ def edit_group(group_id: str) -> None:
     ):
         ui.label(f"Edit group: {group['name']}").classes("text-3xl font-bold")
         with ui.element("div").style("display: flex; gap: 8px;"):
-            ui.button("Save group").classes("default-style").props(
-                "color=black flat"
-            ).style("width: 150px").on(
+            ui.button("Save group").classes("default-style").props("flat", remove="color").style("width: 150px").on(
                 "click",
                 lambda: save_group(
                     users_table.selected,
@@ -241,7 +231,7 @@ def edit_group(group_id: str) -> None:
                     quota.value,
                 ),
             )
-            ui.button("Cancel").classes("delete-style").props("color=black flat").on(
+            ui.button("Cancel").classes("delete-style").props("flat", remove="color").on(
                 "click", lambda: ui.navigate.to("/admin")
             )
 
@@ -330,7 +320,7 @@ def statistics(group_id: str) -> None:
         """
         <style>
             body {
-                background-color: #ffffff;
+                background-color: var(--color-bg-surface);
             }
             .stats-container {
                 max-width: 1500px;
@@ -343,7 +333,7 @@ def statistics(group_id: str) -> None:
             }
             .stats-card {
                 width: 100%;
-                background-color: #ffffff;
+                background-color: var(--color-bg-surface);
                 box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
                 border-radius: 1rem;
                 padding: 1.5rem 2rem;
@@ -353,23 +343,23 @@ def statistics(group_id: str) -> None:
                 font-size: 1.8rem;
                 font-weight: 700;
                 margin-bottom: 1rem;
-                color: #111827;
+                color: var(--color-text-primary);
             }
             .stats-card p {
                 margin: 0.25rem 0;
                 font-size: 1.1rem;
-                color: #374151;
+                color: var(--color-text-muted);
             }
             .chart-container {
                 width: 100%;
-                background-color: #ffffff;
+                background-color: var(--color-bg-surface);
                 border-radius: 1rem;
                 box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
                 padding: 1.5rem 2rem;
             }
             .table-container {
                 width: 100%;
-                background-color: #ffffff;
+                background-color: var(--color-bg-surface);
                 border-radius: 1rem;
                 box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
                 padding: 1.5rem 2rem;
@@ -579,7 +569,7 @@ def create() -> None:
             """
             <style>
                 body {
-                    background-color: #ffffff;
+                    background-color: var(--color-bg-surface);
                 }
             </style>
             """
@@ -595,7 +585,7 @@ def create() -> None:
                 create = (
                     ui.button("Create new group")
                     .classes("default-style")
-                    .props("color=black flat")
+                    .props("flat", remove="color")
                 )
                 create.on("click", lambda: create_group_dialog(page=admin))
 
@@ -662,7 +652,7 @@ def create() -> None:
                                     value=False,
                                 )
                                 .classes("text-bold")
-                                .style("width: 100%; background-color: #ffffff;")
+                                .style("width: 100%; background-color: var(--color-bg-surface);")
                             )
 
                         if group["name"] == "All users":
@@ -690,7 +680,7 @@ def users() -> None:
         """
         <style>
             body {
-                background-color: #ffffff;
+                background-color: var(--color-bg-surface);
             }
         </style>
         """
@@ -782,10 +772,10 @@ def users() -> None:
 
     with users_table.add_slot("top-right"):
         with ui.row().classes("items-center"):
-            ui.button("Enable").classes("button-close").props("color=black flat").style(
+            ui.button("Enable").classes("button-close").props("flat", remove="color").style(
                 "width: 150px"
             ).on("click", lambda: set_active_status(users_table.selected, True))
-            ui.button("Disable").classes("delete-style").props("color=black flat").on(
+            ui.button("Disable").classes("delete-style").props("flat", remove="color").on(
                 "click", lambda: set_active_status(users_table.selected, False)
             )
 
@@ -819,7 +809,7 @@ def users() -> None:
 
                 dialog.open()
 
-            with ui.button("More").classes("button-close").props("color=black flat icon-right=arrow_drop_down"):
+            with ui.button("More").classes("button-close").props("flat icon-right=arrow_drop_down", remove="color"):
                 with ui.menu():
                     ui.menu_item(
                         "Domains",
@@ -869,10 +859,10 @@ def health() -> None:
         """
         <style>
             body {
-                background-color: #ffffff;
+                background-color: var(--color-bg-surface);
             }
             .card {
-                background-color: white;
+                background-color: var(--color-bg-surface);
                 border-radius: 1rem;
                 box-shadow: 0 2px 8px rgba(0,0,0,0.1);
                 padding: 1.25rem;
@@ -1186,9 +1176,7 @@ def create_customer_dialog(page: callable) -> None:
             notes_input = ui.textarea("Notes").classes("w-full").props("outlined")
 
             with ui.row().style("justify-content: flex-end; width: 100%;"):
-                ui.button("Cancel").classes("button-close").props(
-                    "color=black flat"
-                ).on("click", lambda: create_customer_dialog.close())
+                ui.button("Cancel").classes("button-close").props("flat", remove="color").on("click", lambda: create_customer_dialog.close())
 
                 def create_customer():
                     if not partner_id_input.value.strip():
@@ -1248,9 +1236,7 @@ def create_customer_dialog(page: callable) -> None:
                         create_customer_dialog.close()
                         ui.navigate.to("/admin/customers")
 
-                ui.button("Create").classes("default-style").props(
-                    "color=black flat"
-                ).on("click", create_customer)
+                ui.button("Create").classes("default-style").props("flat", remove="color").on("click", create_customer)
 
         create_customer_dialog.open()
 
@@ -1272,7 +1258,7 @@ def edit_customer(customer_id: str) -> None:
         """
         <style>
             body {
-                background-color: #ffffff;
+                background-color: var(--color-bg-surface);
             }
         </style>
         """
@@ -1407,9 +1393,7 @@ def edit_customer(customer_id: str) -> None:
     with ui.row().style(
         "justify-content: flex-end; width: 100%; padding: 16px; gap: 8px;"
     ):
-        ui.button("Save customer").classes("default-style").props(
-            "color=black flat"
-        ).style("width: 150px").on(
+        ui.button("Save customer").classes("default-style").props("flat", remove="color").style("width: 150px").on(
             "click",
             lambda: save_customer(
                 customer_abbr_input.value,
@@ -1429,7 +1413,7 @@ def edit_customer(customer_id: str) -> None:
                 else default_language_select.value,
             ),
         )
-        ui.button("Cancel").classes("delete-style").props("color=black flat").on(
+        ui.button("Cancel").classes("delete-style").props("flat", remove="color").on(
             "click", lambda: ui.navigate.to("/admin/customers")
         )
 
@@ -1450,7 +1434,7 @@ def customers() -> None:
         """
         <style>
             body {
-                background-color: #ffffff;
+                background-color: var(--color-bg-surface);
             }
         </style>
         """
@@ -1472,7 +1456,7 @@ def customers() -> None:
                 create = (
                     ui.button("Create new customer")
                     .classes("default-style")
-                    .props("color=black flat")
+                    .props("flat", remove="color")
                 )
                 create.on("click", lambda: create_customer_dialog(page=customers))
 
@@ -1625,12 +1609,8 @@ def create_rule_dialog(page: callable) -> None:
             )
 
             with ui.row().style("justify-content: flex-end; width: 100%;"):
-                ui.button("Cancel").classes("button-close").props(
-                    "color=black flat"
-                ).on("click", lambda: dialog.close())
-                ui.button("Create").classes("default-style").props(
-                    "color=black flat"
-                ).on(
+                ui.button("Cancel").classes("button-close").props("flat", remove="color").on("click", lambda: dialog.close())
+                ui.button("Create").classes("default-style").props("flat", remove="color").on(
                     "click",
                     lambda: (
                         _do_create_rule(
@@ -1818,10 +1798,8 @@ def edit_rule_dialog(rule: dict, page: callable) -> None:
             )
 
             with ui.row().style("justify-content: flex-end; width: 100%;"):
-                ui.button("Cancel").classes("button-close").props(
-                    "color=black flat"
-                ).on("click", lambda: dialog.close())
-                ui.button("Save").classes("default-style").props("color=black flat").on(
+                ui.button("Cancel").classes("button-close").props("flat", remove="color").on("click", lambda: dialog.close())
+                ui.button("Save").classes("default-style").props("flat", remove="color").on(
                     "click",
                     lambda: (
                         _do_update_rule(
@@ -1893,9 +1871,7 @@ def delete_rule_dialog(rule: dict) -> None:
             )
 
             with ui.row().style("justify-content: flex-end; width: 100%;"):
-                ui.button("Cancel").classes("button-close").props(
-                    "color=black flat"
-                ).on("click", lambda: dialog.close())
+                ui.button("Cancel").classes("button-close").props("flat", remove="color").on("click", lambda: dialog.close())
                 ui.button("Delete").classes("delete-style").props("color=red flat").on(
                     "click",
                     lambda: (
@@ -1933,10 +1909,8 @@ def add_attribute_dialog() -> None:
             )
 
             with ui.row().style("justify-content: flex-end; width: 100%;"):
-                ui.button("Cancel").classes("button-close").props(
-                    "color=black flat"
-                ).on("click", lambda: dialog.close())
-                ui.button("Add").classes("default-style").props("color=black flat").on(
+                ui.button("Cancel").classes("button-close").props("flat", remove="color").on("click", lambda: dialog.close())
+                ui.button("Add").classes("default-style").props("flat", remove="color").on(
                     "click",
                     lambda: (
                         _do_add_attribute(
@@ -2044,7 +2018,7 @@ def test_rules_dialog(selected_rules: list[dict]) -> None:
 
         with ui.row().classes("w-full justify-end mt-4 gap-2"):
             ui.button("Test", icon="science", on_click=run_test).props("color=primary")
-            ui.button("Close", on_click=dialog.close).props("flat")
+            ui.button("Close", on_click=dialog.close).props("flat", remove="color")
 
     dialog.open()
 
@@ -2067,7 +2041,7 @@ def test_all_rules_dialog() -> None:
     if all_groups:
         group_names = {g["id"]: g["name"] for g in all_groups}
 
-    with ui.dialog() as dialog, ui.card().style("min-width: 600px; max-width: 800px;"):
+    with ui.dialog() as dialog, ui.card().style("min-width: 600px; max-width: 800px;").classes("simulate-dialog"):
         ui.label("Simulate provisioning").classes("text-xl font-bold")
         ui.label(
             "Enter attribute values to simulate what would happen when a user logs in."
@@ -2111,7 +2085,7 @@ def test_all_rules_dialog() -> None:
 
         ui.button(
             "Add attribute", icon="add", on_click=lambda: add_attr_row()
-        ).props("flat dense color=primary")
+        ).props("flat dense color=primary").classes("add-attr-btn")
 
         result_container = ui.column().classes("w-full mt-2")
 
@@ -2225,10 +2199,10 @@ def test_all_rules_dialog() -> None:
                         ui.label("None").classes("text-grey-7")
 
         with ui.row().classes("w-full justify-end mt-4 gap-2"):
-            ui.button("Simulate", icon="science", on_click=run_test).props(
-                "color=primary"
-            )
-            ui.button("Close", on_click=dialog.close).props("flat")
+            ui.button("Simulate", icon="science", on_click=run_test).classes(
+                "button-default-style"
+            ).props(remove="color")
+            ui.button("Close", on_click=dialog.close).props("flat", remove="color")
 
     dialog.open()
 
@@ -2322,7 +2296,7 @@ def _show_rules_help() -> None:
                 ).classes("text-body2 text-grey-8")
 
         with ui.row().classes("w-full justify-end mt-4"):
-            ui.button("Close", on_click=dialog.close).props("flat")
+            ui.button("Close", on_click=dialog.close).props("flat", remove="color")
 
     dialog.open()
 
@@ -2344,7 +2318,7 @@ def rules_page() -> None:
         """
         <style>
             body {
-                background-color: #ffffff;
+                background-color: var(--color-bg-surface);
             }
         </style>
         """
@@ -2361,12 +2335,10 @@ def rules_page() -> None:
         with ui.element("div").style("display: flex; gap: 10px;"):
             ui.button("Simulate provisioning").classes(
                 "default-style"
-            ).props("color=black flat").style("min-width: 160px; background-color: white;").on(
+            ).props("flat", remove="color").style("min-width: 160px; background-color: var(--color-bg-surface);").on(
                 "click", lambda: test_all_rules_dialog()
             )
-            ui.button("Add rule").classes("default-style").props(
-                "color=black flat"
-            ).style("min-width: 160px;").on(
+            ui.button("Add rule").classes("default-style").props("flat", remove="color").style("min-width: 160px;").on(
                 "click", lambda: create_rule_dialog(page=rules_page)
             )
 
@@ -2374,7 +2346,7 @@ def rules_page() -> None:
         "Rules are evaluated on every login. "
         "Deactivate overrides Activate. "
         "The last matching rule determines the user's group."
-    ).classes("text-body2 text-black")
+    ).classes("text-body2")
 
     rules_data = rules_get()
     rules_list = rules_data.get("result", []) if rules_data else []
@@ -2549,9 +2521,7 @@ def rules_page() -> None:
             "justify-content: space-between; align-items: center; width: 100%;"
         ):
             ui.label("Attributes (BOFH)").classes("text-2xl font-bold")
-            ui.button("Add attribute").classes("default-style").props(
-                "color=black flat"
-            ).style("min-width: 160px;").on("click", lambda: add_attribute_dialog())
+            ui.button("Add attribute").classes("default-style").props("flat", remove="color").style("min-width: 160px;").on("click", lambda: add_attribute_dialog())
 
         ui.label(
             "These are the known attribute names available when creating rules."
@@ -2675,7 +2645,7 @@ def _announcement_preview_dialog(message: str, severity: str = "info") -> None:
                 ui.icon(style["icon"], size="sm").style(
                     f"color: {style['icon_color']};"
                 )
-                ui.html(message, sanitize=False).style("color: #000000; font-size: 0.95rem;")
+                ui.html(message, sanitize=False).style("color: var(--color-text-primary); font-size: 0.95rem;")
                 if style["dismissible"]:
                     ui.button(icon="close").props(
                         "flat round dense size=sm color=grey-7 disable"
@@ -2683,7 +2653,7 @@ def _announcement_preview_dialog(message: str, severity: str = "info") -> None:
             with ui.row().classes("w-full justify-end mt-4"):
                 ui.button("Close", on_click=preview_dialog.close).classes(
                     "button-close"
-                ).props("color=black flat")
+                ).props("flat", remove="color")
         preview_dialog.open()
 
 
@@ -2749,12 +2719,12 @@ def _announcement_create_dialog() -> None:
                     on_click=lambda: _announcement_preview_dialog(
                         message_input.value, severity_select.value
                     ),
-                ).props("color=black flat")
+                ).props("flat", remove="color")
 
                 with ui.row().classes("gap-2"):
                     ui.button("Cancel", on_click=dialog.close).classes(
                         "button-close"
-                    ).props("color=black flat")
+                    ).props("flat", remove="color")
                     ui.button(
                         "Create",
                         on_click=lambda: (
@@ -2773,7 +2743,7 @@ def _announcement_create_dialog() -> None:
                                 ui.navigate.to("/admin/announcements"),
                             )
                         ),
-                    ).classes("default-style").props("color=black flat")
+                    ).classes("default-style").props("flat", remove="color")
 
         dialog.open()
 
@@ -2841,12 +2811,12 @@ def _announcement_edit_dialog(ann: dict) -> None:
                     on_click=lambda: _announcement_preview_dialog(
                         message_input.value, severity_select.value
                     ),
-                ).props("color=black flat")
+                ).props("flat", remove="color")
 
                 with ui.row().classes("gap-2"):
                     ui.button("Cancel", on_click=dialog.close).classes(
                         "button-close"
-                    ).props("color=black flat")
+                    ).props("flat", remove="color")
                     ui.button(
                         "Save",
                         on_click=lambda: (
@@ -2866,7 +2836,7 @@ def _announcement_edit_dialog(ann: dict) -> None:
                                 ui.navigate.to("/admin/announcements"),
                             )
                         ),
-                    ).classes("default-style").props("color=black flat")
+                    ).classes("default-style").props("flat", remove="color")
 
         dialog.open()
 
@@ -2885,7 +2855,7 @@ def _announcement_delete_confirm(ann: dict) -> None:
             with ui.row().classes("w-full justify-end gap-2"):
                 ui.button("Cancel", on_click=dialog.close).classes(
                     "button-close"
-                ).props("color=black flat")
+                ).props("flat", remove="color")
                 ui.button(
                     "Delete",
                     on_click=lambda: (
@@ -2909,20 +2879,18 @@ def announcements_page() -> None:
         return
 
     ui.add_head_html(default_styles)
-    ui.add_head_html("<style>body { background-color: #ffffff; }</style>")
+    ui.add_head_html("<style>body { background-color: var(--color-bg-surface); }</style>")
 
     with ui.row().style(
         "justify-content: space-between; align-items: center; width: 100%;"
     ):
         ui.label("Announcements").classes("text-3xl font-bold")
-        ui.button("New announcement", icon="add").classes("default-style").props(
-            "color=black flat"
-        ).on("click", lambda: _announcement_create_dialog())
+        ui.button("New announcement", icon="add").classes("default-style").props("flat", remove="color").on("click", lambda: _announcement_create_dialog())
 
     ui.label(
         "Manage announcement banners shown to all users. "
         "All times are in server time."
-    ).classes("text-body2 text-black mb-4")
+    ).classes("text-body2 mb-4")
 
     ann_list = announcements_get()
 
@@ -3016,7 +2984,7 @@ def announcements_page() -> None:
                 <q-toggle
                     :model-value="props.row.enabled"
                     @update:model-value="$parent.$emit('toggle_enabled', props.row)"
-                    color="black"
+                    color="positive"
                 />
             </q-td>
             """,
@@ -3058,7 +3026,7 @@ def analytics() -> None:
         return
 
     ui.add_head_html(default_styles)
-    ui.add_head_html("<style>body { background-color: #ffffff; }</style>")
+    ui.add_head_html("<style>body { background-color: var(--color-bg-surface); }</style>")
 
     ui.label("Activity overview").classes("text-3xl font-bold mb-4")
 
@@ -3116,18 +3084,34 @@ def analytics() -> None:
                     day_idx = (r["dow"] - 1) % 7
                     matrix[day_idx][r["hour"]] = r["views"]
 
+                # The default Blues scale ramps light->dark as the value rises,
+                # which is the light-mode convention: low/mid land on bright
+                # light-blue. On a dark background that's backwards (low cells
+                # glare, the max is dark). In dark mode use a flipped scale where
+                # brightness rises with the value: low = transparent/faint, high
+                # = brighter blue. Light mode keeps the original scale untouched.
+                if app.storage.user.get("dark_mode"):
+                    heatmap_colorscale = [
+                        [0.0, "rgba(45,140,224,0.0)"],
+                        [0.15, "rgba(45,140,224,0.5)"],
+                        [0.5, "#1f6fc0"],
+                        [1.0, "#3d97e0"],
+                    ]
+                else:
+                    heatmap_colorscale = [
+                        [0, "#f5f5f5"],
+                        [0.25, "#bbdefb"],
+                        [0.5, "#42a5f5"],
+                        [0.75, "#1565c0"],
+                        [1, "#0d47a1"],
+                    ]
+
                 fig = go.Figure(
                     data=go.Heatmap(
                         z=matrix,
                         x=[f"{h:02d}:00" for h in hours],
                         y=day_names,
-                        colorscale=[
-                            [0, "#f5f5f5"],
-                            [0.25, "#bbdefb"],
-                            [0.5, "#42a5f5"],
-                            [0.75, "#1565c0"],
-                            [1, "#0d47a1"],
-                        ],
+                        colorscale=heatmap_colorscale,
                         hovertemplate="Day: %{y}<br>Hour: %{x}<br>Views: %{z}<extra></extra>",
                         showscale=True,
                         colorbar=dict(title="Views", thickness=15),

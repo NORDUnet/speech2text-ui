@@ -171,7 +171,7 @@ class Customer:
                         delete = (
                             ui.button("Delete")
                             .classes("button-close")
-                            .props("color=black flat")
+                            .props("flat", remove="color")
                             .style("width: 100%")
                         )
 
@@ -187,9 +187,7 @@ class Customer:
                 ).classes("text-subtitle2").style("margin-bottom: 10px;")
 
                 with ui.row().classes("justify-between w-full"):
-                    ui.button("Cancel", on_click=lambda: delete_customer_dialog.close()).props(
-                        "color=black"
-                    )
+                    ui.button("Cancel", on_click=lambda: delete_customer_dialog.close()).props("color=black")
                     ui.button(
                         "Delete",
                         on_click=lambda: (

@@ -135,9 +135,9 @@ def create() -> None:
                 <q-btn
                     v-if="props.row.status === 'Uploaded' || props.row.status === 'Completed'"
                     :label="props.row.status === 'Completed' ? 'Edit' : 'Transcribe'"
-                    :color="props.row.status === 'Completed' ? 'white' : 'black'"
-                    :text-color="props.row.status === 'Completed' ? 'black' : 'white'"
-                    :outline="props.row.status === 'Completed'"
+                    color="black"
+                    text-color="white"
+                    class="row-action-btn"
                     style="width: 120px; height: 40px;"
                     @click="$parent.$emit('table_handle_row_click', props.row)"
                 />
@@ -169,21 +169,21 @@ def create() -> None:
         with table.add_slot("top-right"):
             with ui.row().classes("items-center"):
                 with ui.button("Delete", icon="delete") as delete:
-                    delete.props("color=black flat")
+                    delete.props("flat", remove="color")
                     delete.classes("delete-style")
                     delete.on("click", lambda: table_delete(table))
                     delete.set_enabled(False)
                     delete_tooltip = ui.tooltip("Select one or more files to delete")
 
                 with ui.button("Export", icon="download") as bulk_export:
-                    bulk_export.props("color=black flat")
+                    bulk_export.props("flat", remove="color")
                     bulk_export.classes("default-style")
                     bulk_export.on("click", lambda: table_bulk_export(table))
                     bulk_export.set_enabled(False)
                     export_tooltip = ui.tooltip("Select one or more files to export")
 
                 with ui.button("Transcribe", icon="rtt") as bulk_transcribe:
-                    bulk_transcribe.props("color=black flat")
+                    bulk_transcribe.props("flat", remove="color")
                     bulk_transcribe.classes("default-style")
                     bulk_transcribe.on("click", lambda: table_bulk_transcribe(table, on_complete=lambda: ui.timer(0.1, update_rows, once=True)))
                     bulk_transcribe.set_enabled(False)
@@ -192,7 +192,7 @@ def create() -> None:
                     )
 
                 with ui.button("Upload", icon="upload") as upload:
-                    upload.props("color=black flat")
+                    upload.props("flat", remove="color")
                     upload.classes("default-style")
                     upload.on("click", lambda: table_upload(table))
 

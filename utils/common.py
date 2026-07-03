@@ -123,28 +123,204 @@ jobs_columns = [
 
 default_styles = """
     <style>
+        /* ── Theme variables (light) ── */
+        :root, .body--light {
+            --color-bg-page: #ffffff;
+            --color-bg-surface: #ffffff;
+            --color-bg-surface-alt: #f5f5f5;
+            --color-bg-hover: #e0e0e0;
+            --color-control-bg: #ffffff;
+            --color-header-bg: #ffffff;
+            --color-text-primary: #000000;
+            --color-text-muted: #666666;
+            --color-brand: #082954;
+            --color-accent: #d3ecbe;
+            --color-on-accent: #000000;
+            --color-on-brand: #ffffff;
+            /* Primary action buttons (Upload, Start transcribing, etc.) */
+            --color-primary-btn-bg: #d3ecbe;
+            --color-primary-btn-text: #000000;
+            /* Solid blue buttons (login, edit, etc.) */
+            --color-btn-blue-bg: #082954;
+            --color-delete-text: #721c24;
+            --color-border: #000000;
+            --color-disabled-bg: #e0e0e0;
+            --color-disabled-border: #bdbdbd;
+            --color-danger: #d32f2f;
+        }
+        /* ── Theme variables (dark) ── */
+        .body--dark {
+            --color-bg-page: #121212;
+            --color-bg-surface: #000000;
+            --color-bg-surface-alt: #181818;
+            --color-bg-hover: #333333;
+            --color-control-bg: #2d2d2d;
+            --color-header-bg: #1e1e1e;
+            --color-text-primary: #ffffff;
+            --color-text-muted: #b0b0b0;
+            /* Tailwind v4 builds .text-gray-N as `color: var(--color-gray-N)`
+               inside a cascade @layer, so a scoped property override is
+               unreliable. Redefining the variables globally in dark mode makes
+               every .text-gray-* render white regardless of DOM context.
+               Shades 400-800 are used only for text here; gray-900 is also used
+               as bg-gray-900, so it is recoloured scoped to text elsewhere. */
+            --color-gray-400: #ffffff;
+            --color-gray-500: #ffffff;
+            --color-gray-600: #ffffff;
+            --color-gray-700: #ffffff;
+            --color-gray-800: #ffffff;
+            --color-brand: #5b9bd5;
+            --color-accent: #2e7d32;
+            --color-on-accent: #ffffff;
+            --color-on-brand: #ffffff;
+            /* Primary action buttons + solid blue buttons: NORDUnet blue, white text */
+            --color-primary-btn-bg: #005eb8;
+            --color-primary-btn-text: #ffffff;
+            --color-btn-blue-bg: #005eb8;
+            --color-delete-text: #ff8a80;
+            --color-border: #5a5a5a;
+            --color-disabled-bg: #333333;
+            --color-disabled-border: #555555;
+            --color-danger: #ef5350;
+        }
+
+        /* ── Dark-mode overrides for hardcoded light colors ──
+           A stylesheet !important beats inline styles set without !important,
+           so these flip the app's hardcoded white surfaces/black text without
+           having to edit every element. */
+        /* Buttons with color="primary" (the theme picker's selected segment and
+           various dialog Save/Close/Test buttons) render via Quasar's bg-primary
+           / text-primary, whose `!important` lives in a cascade @layer and beats
+           an unlayered override regardless of specificity. So instead of fighting
+           the property, point the variable they read (--q-primary) at the brand
+           blue — scoped to buttons so links/radios elsewhere keep Quasar's primary. */
+        .body--dark .q-btn,
+        .body--dark .q-btn-toggle,
+        .body--dark .q-btn-toggle .q-btn[aria-pressed="true"] {
+            --q-primary: var(--color-btn-blue-bg) !important;
+        }
+        .body--dark body,
+        .body--dark .nicegui-content {
+            background-color: var(--color-bg-page) !important;
+        }
+        /* Header text follows the theme in BOTH modes (Quasar's q-header
+           defaults to white text, which is invisible on the light header).
+           Flat icon buttons + title inherit this; the red admin buttons keep
+           their own text-red colour. */
+        .q-header {
+            color: var(--color-text-primary) !important;
+        }
+        .body--dark .q-header {
+            background-color: var(--color-header-bg) !important;
+        }
+        .body--dark .q-drawer {
+            background-color: var(--color-bg-surface-alt) !important;
+        }
+        .body--dark .q-card {
+            background-color: var(--color-bg-surface) !important;
+            color: var(--color-text-primary);
+        }
+        /* The customer expansion carries `text-bold` to bold its header label,
+           which also bolds every card inside it. Reset the expansion content to
+           normal weight so grouped cards match the ungrouped "All users" card —
+           only each card's own font-bold/font-semibold parts (name, "Statistics",
+           "This month"/"Last month") stay bold. */
+        .q-expansion-item__content {
+            font-weight: 400;
+        }
+        /* gray-400..800 are recoloured via global vars above; gray-900 is kept
+           scoped here so bg-gray-900 (used as a dark surface) is unaffected.
+           The color declaration is a fallback for the case the Tailwind utility
+           is built without !important. */
+        .body--dark .text-black,
+        .body--dark .text-gray-900,
+        .body--dark .text-gray-800,
+        .body--dark .text-gray-700,
+        .body--dark .text-gray-600,
+        .body--dark .text-gray-500,
+        .body--dark .text-gray-400 {
+            --color-gray-900: #ffffff;
+            color: var(--color-text-primary) !important;
+        }
+        /* Icons/labels whose colour is set inline to black (NiceGUI renders
+           color="black" as an inline style, not a class). */
+        .body--dark [style*="color: black"],
+        .body--dark [style*="color:black"],
+        .body--dark [style*="color: #000"],
+        .body--dark [style*="color:#000"] {
+            color: var(--color-text-primary) !important;
+        }
+        .body--dark .menu-item:hover { background-color: var(--color-bg-hover); }
+
         .q-chip {
-            background-color: #d3ecbe !important;
-            color: #000000 !important;
+            background-color: var(--color-accent) !important;
+            color: var(--color-on-accent) !important;
+        }
+        /* Selected-value chips (e.g. allowed-domains select) default to the
+           accent colour, which is green in dark mode. Use the same muted navy as
+           selected table rows so they fit the theme. Dark mode only — light mode
+           keeps the accent. */
+        .body--dark .q-chip {
+            background-color: #1b3a5e !important;
+            color: #ffffff !important;
+        }
+        /* "Enabled" toggles use color="positive" (green). Recolour to NORDUnet
+           blue in dark mode by overriding the variable Quasar's positive colour
+           reads. Light mode keeps green. */
+        .body--dark .q-toggle {
+            --q-positive: var(--color-btn-blue-bg) !important;
+        }
+        /* Announcement banners set light pastel backgrounds + dark text/icon
+           inline (good for light mode). In dark mode, give each severity a dark
+           tint with light text so the bar fits the theme. Overrides the inline
+           styles via !important; keyed off the .severity-* classes. */
+        .body--dark .announcement-banner.severity-info {
+            background-color: #1a5490 !important;
+            border-bottom-color: #2e74ad !important;
+        }
+        .body--dark .announcement-banner.severity-maintenance {
+            background-color: #6f4f18 !important;
+            border-bottom-color: #a07a2c !important;
+        }
+        .body--dark .announcement-banner.severity-major_incident {
+            background-color: #7a2727 !important;
+            border-bottom-color: #ab3a3a !important;
+        }
+        .body--dark .announcement-banner.severity-info,
+        .body--dark .announcement-banner.severity-info * {
+            color: #d6e9ff !important;
+        }
+        .body--dark .announcement-banner.severity-maintenance,
+        .body--dark .announcement-banner.severity-maintenance * {
+            color: #ffdca8 !important;
+        }
+        .body--dark .announcement-banner.severity-major_incident,
+        .body--dark .announcement-banner.severity-major_incident * {
+            color: #ffc4c4 !important;
+        }
+        .body--dark .announcement-banner a {
+            color: #9cc4ff !important;
+            text-decoration: underline;
         }
         .default-style {
-            background-color: #d3ecbe;
-            border: 1px solid #000000;
+            background-color: var(--color-primary-btn-bg);
+            color: var(--color-primary-btn-text) !important;
+            border: 1px solid var(--color-border);
         }
         .default-style.disabled {
-            background-color: #e0e0e0 !important;
-            border: 1px solid #bdbdbd !important;
+            background-color: var(--color-disabled-bg) !important;
+            border: 1px solid var(--color-disabled-border) !important;
             opacity: 0.7;
         }
         .delete-style {
-            background-color: #ffffff;
-            color: #721c24;
-            border: 1px solid #000000;
+            background-color: var(--color-control-bg);
+            color: var(--color-text-primary) !important;
+            border: 1px solid var(--color-border);
             width: 150px;
         }
         .delete-style.disabled {
-            background-color: #e0e0e0 !important;
-            border: 1px solid #bdbdbd !important;
+            background-color: var(--color-disabled-bg) !important;
+            border: 1px solid var(--color-disabled-border) !important;
             opacity: 0.7;
         }
         .table-style th {
@@ -153,54 +329,176 @@ default_styles = """
         .table-style tr {
             font-size: 14px;
         }
+        /* Editor caption action buttons (Split / Merge / Close / Add) are flat
+           text buttons; the brand blue #005eb8 reads muddy as thin text on the
+           black editor, so use a lightened NORDUnet blue here for legibility.
+           Direct, higher-specificity rule beats Quasar's unlayered .text-primary
+           (and sidesteps the inline --q-primary the buttons inherit). */
+        .body--dark .caption-btn-row .q-btn:not(.caption-delete-btn) {
+            --q-primary: #2d8fe0 !important;
+        }
+        /* Editor "Delete" caption button: keep it red but brighter so it stands
+           out on the black editor like the blue buttons do. Quasar's .text-red
+           is unlayered !important, so a higher-specificity dark rule wins. */
+        .body--dark .caption-delete-btn {
+            color: #ff5252 !important;
+        }
+        /* Help dialog: the outer card hardcodes a white gradient background, so
+           in dark mode it shows as a white dialog while the global .q-card rule
+           forces the inner cards black — black boxes on white. Give the dialog a
+           dark surface, raise the inner cards onto a slightly lighter surface,
+           and force the dim step text (text-grey-8) white. The `background`
+           shorthand with !important also clears the inline white gradient.
+           All scoped to dark mode; light mode keeps the gradient + grey text. */
+        .body--dark .q-card.help-dialog {
+            background: var(--color-bg-surface) !important;
+        }
+        .body--dark .help-dialog .q-card {
+            background: var(--color-bg-surface-alt) !important;
+        }
+        .body--dark .help-dialog .text-grey-8 {
+            color: var(--color-text-primary) !important;
+        }
+        /* Keyboard-shortcuts dialog key chips use Tailwind bg-gray-100, which
+           stays light grey in dark mode → near-white text on light grey,
+           illegible. Override the variable bg-gray-100 reads (scoped to the chip)
+           so it gets a dark surface in dark mode. Light mode keeps grey-100. */
+        .body--dark .kbd-key {
+            --color-gray-100: var(--color-control-bg);
+        }
+        /* "Prune" speakers button is an outline button forced to color=black
+           (.text-black), making it black-on-black (invisible) in dark mode.
+           Tailwind v4 builds .text-black as `color: var(--color-black)` inside a
+           cascade @layer with !important, which beats an unlayered override — so
+           recolour the variable it reads (scoped to this button) rather than the
+           property. The outline border uses currentColor, so this reveals both
+           the label and the border. Light mode keeps text-black (black). */
+        .body--dark .prune-btn {
+            --color-black: #ffffff;
+            color: var(--color-text-primary) !important;
+        }
+        /* Row hover: brighter than Quasar's default so the hovered line clearly
+           stands out on dark tables (My files, admin lists, group statistics).
+           Excludes selected rows so the navy selection isn't overridden. */
+        .body--dark .q-table tbody tr:not(.selected):hover,
+        .body--dark .q-table tbody tr:not(.selected):hover > td {
+            background-color: #454545 !important;
+        }
+        /* Toggle (e.g. the appearance Light/Dark/Auto picker) hover: same
+           brighter grey as the table row hover so it clearly stands out,
+           instead of Quasar's faint default. The selected segment keeps its
+           blue (excluded via aria-pressed). */
+        .body--dark .q-btn-toggle .q-btn:not([aria-pressed="true"]):hover {
+            background-color: #454545 !important;
+        }
+        /* Plotly charts use template="plotly_white" — a baked white background
+           with dark text, jarring/illegible in dark mode. Make the chart
+           backgrounds transparent so the dark card shows through, and recolour
+           the text and gridlines. Bar/line trace colours are left intact.
+           CSS beats Plotly's inline SVG styling, and this covers every chart
+           (stats, health, heatmaps) in all modes. Dark mode only. */
+        .body--dark .js-plotly-plot .bg {
+            fill: transparent !important;
+        }
+        .body--dark .js-plotly-plot .main-svg {
+            background-color: transparent !important;
+        }
+        .body--dark .js-plotly-plot text {
+            fill: var(--color-text-primary) !important;
+        }
+        .body--dark .js-plotly-plot .gridlayer path,
+        .body--dark .js-plotly-plot .zerolinelayer path {
+            stroke: #3a3a3a !important;
+        }
+        /* Selected rows: muted navy — keeps the NORDUnet-blue identity but at low
+           saturation so a full-width selected row reads as highlighted rather
+           than a loud blue slab, and stays easy on the eyes in dark mode.
+           Applies to all selectable tables (My files, edit group, admin lists). */
+        .body--dark .q-table tbody tr.selected,
+        .body--dark .q-table tbody tr.selected > td {
+            background-color: #1b3a5e !important;
+        }
         .cancel-style {
-            background-color: #ffffff;
-            color: #721c24;
-            border: 1px solid #000000;
+            background-color: var(--color-control-bg);
+            color: var(--color-text-primary) !important;
+            border: 1px solid var(--color-border);
             width: 150px;
         }
         .upload-style {
             width: 100%;
             height: 200px;
         }
+        .upload-dropzone {
+            border-color: var(--color-border);
+            background-color: var(--color-bg-surface-alt);
+            color: var(--color-text-muted);
+            transition: background-color 0.15s;
+        }
+        /* Dropzone prompt text: muted grey is too dim on the dark dropzone —
+           use the primary (white) text colour so it stands out. Dark mode only. */
+        .body--dark .upload-dropzone {
+            color: var(--color-text-primary);
+        }
+        .upload-dropzone:hover,
+        .upload-dropzone.dragover {
+            background-color: var(--color-bg-hover);
+        }
         .button-default-style {
-            background-color: #082954 !important;
-            color: #ffffff !important;
+            background-color: var(--color-btn-blue-bg) !important;
+            color: var(--color-on-brand) !important;
             width: 150px;
         }
         .button-replace {
-            background-color: #ffffff;
-            color: #082954 !important;
-            border : 1px solid #082954;
+            background-color: var(--color-control-bg);
+            color: var(--color-brand) !important;
+            border : 1px solid var(--color-brand);
             width: 150px;
         }
         .button-replace-current {
-            background-color: #d3ecbe;
-            color: #000000 !important;
+            background-color: var(--color-accent);
+            color: var(--color-on-accent) !important;
             width: 150px;
         }
         .button-replace-prev-next {
-            background-color: #ffffff;
-            color: #082954 !important;
+            background-color: var(--color-control-bg);
+            color: var(--color-brand) !important;
         }
         .button-close {
-            background-color: #ffffff;
-            color: #000000 !important;
+            background-color: var(--color-control-bg);
+            color: var(--color-text-primary) !important;
             width: 150px;
-            border: 1px solid #000000;
+            border: 1px solid var(--color-border);
         }
         .button-user-status {
-            background-color: #ffffff;
+            background-color: var(--color-control-bg);
+            color: var(--color-text-primary) !important;
             width: 150px;
-            border: 1px solid #000000;
+            border: 1px solid var(--color-border);
         }
         .button-edit {
-            background-color: #082954;
-            color: #ffffff !important;
+            background-color: var(--color-btn-blue-bg);
+            color: var(--color-on-brand) !important;
             width: 150px;
         }
+        /* NiceGUI buttons default to color="primary" (blue). These higher-
+           specificity rules beat Quasar's .text-primary so the button text
+           follows the theme (black in light, white in dark) — matching the
+           original color="black" look in light mode. */
+        .q-btn.default-style {
+            color: var(--color-primary-btn-text) !important;
+        }
+        .q-btn.delete-style,
+        .q-btn.cancel-style,
+        .q-btn.button-close,
+        .q-btn.button-user-status {
+            color: var(--color-text-primary) !important;
+        }
+        /* Header icon buttons follow the theme; the red admin buttons keep red. */
+        .q-header .q-btn:not(.text-red) {
+            color: var(--color-text-primary) !important;
+        }
         .deletion-warning {
-            color: #d32f2f;
+            color: var(--color-danger);
             font-weight: 500;
             display: flex;
             align-items: center;
@@ -256,10 +554,10 @@ def show_help_dialog() -> None:
             .style(
                 "max-width: 900px; padding: 32px; background: linear-gradient(to bottom, #ffffff 0%, #f8f9fa 100%);"
             )
-            .classes("no-shadow")
+            .classes("no-shadow help-dialog")
         ):
             with ui.row().classes("w-full items-center justify-between mb-6"):
-                ui.label("Help & Documentation").classes("text-h4 font-bold text-black")
+                ui.label("Help & Documentation").classes("text-h4 font-bold")
                 ui.button(icon="close", on_click=dialog.close).props(
                     "flat round dense color=grey-7"
                 )
@@ -513,10 +811,54 @@ def page_init(header_text: Optional[str] = "", use_drawer: bool = False) -> None
     if is_admin:
         header_text += " (Administrator)"
 
+    # Dark mode: None = auto (follow system), True = dark, False = light.
+    # Stored per session in app.storage.user and applied live (no page reload).
+    dark = ui.dark_mode(app.storage.user.get("dark_mode", None))
+
+    # The "Prune" outline button is forced to color=black (.text-black). In dark
+    # mode that black is set by an adopted/layered Quasar rule that outranks any
+    # stylesheet override we can inject, so enforce visibility with an inline
+    # !important colour (the only thing that always wins) — applied solely when
+    # body--dark is active, so light mode is untouched. Re-runs on theme toggle
+    # and DOM changes (the button re-renders when speakers change).
+    ui.add_head_html(
+        "<script>(function(){function fix(){var d=document.body.classList."
+        "contains('body--dark');document.querySelectorAll('.prune-btn,"
+        " .help-dialog .text-grey-8, .upload-status, .upload-spinner,"
+        " .simulate-dialog .text-grey-7, .simulate-dialog .text-grey-8')."
+        "forEach(function(b){if(d){b.style.setProperty('color','#ffffff',"
+        "'important');}else{b.style.removeProperty('color');}});"
+        "document.querySelectorAll('.row-action-btn').forEach(function(b){"
+        "if(d){b.style.setProperty('background-color','#e0e0e0','important');"
+        "b.style.setProperty('color','#000000','important');}else{"
+        "b.style.removeProperty('background-color');b.style.removeProperty('color');}});"
+        "document.querySelectorAll('.add-attr-btn').forEach(function(b){"
+        "if(d){b.style.setProperty('color','#2d8fe0','important');}else{"
+        "b.style.removeProperty('color');}});}"
+        "if(!window.__pruneFixObs){window.__pruneFixObs=new MutationObserver(fix);"
+        "window.__pruneFixObs.observe(document.documentElement,{attributes:true,"
+        "attributeFilter:['class'],childList:true,subtree:true});}fix();"
+        "setTimeout(fix,150);setTimeout(fix,600);})();</script>"
+    )
+
+    def _dark_icon(val) -> str:
+        if val is None:
+            return "brightness_auto"
+        return "dark_mode" if val else "light_mode"
+
+    def cycle_dark(btn) -> None:
+        current = app.storage.user.get("dark_mode", None)
+        # auto -> dark -> light -> auto
+        new_val = True if current is None else (False if current else None)
+        app.storage.user["dark_mode"] = new_val
+        dark.value = new_val
+        btn._props["icon"] = _dark_icon(new_val)
+        btn.update()
+
     if use_drawer:
         drawer_open = app.storage.user.get("drawer_open", False)
         drawer = ui.left_drawer(value=True, elevated=True).style(
-            "background-color: #f5f5f5; padding: 0;"
+            "background-color: var(--color-bg-surface-alt); padding: 0;"
         )
 
         drawer.props(':mini-width="56" :width="250" :breakpoint="0"')
@@ -560,7 +902,7 @@ def page_init(header_text: Optional[str] = "", use_drawer: bool = False) -> None
             " transition: background-color 0.15s; width: 100%;"
             " white-space: nowrap; overflow: hidden;"
         )
-        menu_active_style = " background-color: #e0e0e0; font-weight: 600;"
+        menu_active_style = " background-color: var(--color-bg-hover); font-weight: 600;"
         menu_hover_css = """
             <style>
                 .menu-item:hover { background-color: #e0e0e0; }
@@ -633,7 +975,17 @@ def page_init(header_text: Optional[str] = "", use_drawer: bool = False) -> None
                     ).on(
                         "click",
                         lambda: ui.run_javascript(
-                            f"window.open('{settings.API_URL}/api/docs', '_blank')"
+                            "window.open('"
+                            + settings.API_URL
+                            + "/api/docs?theme="
+                            + (
+                                "dark"
+                                if app.storage.user.get("dark_mode") is True
+                                else "light"
+                                if app.storage.user.get("dark_mode") is False
+                                else "auto"
+                            )
+                            + "', '_blank')"
                         ),
                     ):
                         ui.icon("description", color="black").style("font-size: 20px;")
@@ -671,7 +1023,7 @@ def page_init(header_text: Optional[str] = "", use_drawer: bool = False) -> None
 
         with (
             ui.header()
-            .style("justify-content: space-between; background-color: #ffffff;")
+            .style("justify-content: space-between; background-color: var(--color-bg-surface);")
             .classes("drop-shadow-md")
         ):
             with ui.element("div").style(
@@ -680,7 +1032,7 @@ def page_init(header_text: Optional[str] = "", use_drawer: bool = False) -> None
                 with ui.button(
                     icon="close" if drawer_open else "menu",
                     on_click=lambda: toggle_drawer(),
-                ).props("flat color=black") as menu_btn:
+                ).props("flat", remove="color") as menu_btn:
                     menu_btn_tooltip = ui.tooltip(
                         "Close menu" if drawer_open else "Expand menu"
                     )
@@ -691,26 +1043,31 @@ def page_init(header_text: Optional[str] = "", use_drawer: bool = False) -> None
                     "click", lambda: ui.navigate.to("/home")
                 )
                 ui.label(settings.TOPBAR_TEXT + header_text).classes(
-                    "text-h6 text-black cursor-pointer"
+                    "text-h6 cursor-pointer"
                 ).on("click", lambda: ui.navigate.to("/home"))
 
             with ui.element("div").style("display: flex; gap: 0px;"):
                 with ui.button(
+                    icon=_dark_icon(app.storage.user.get("dark_mode", None)),
+                ).props("flat", remove="color") as dark_btn:
+                    ui.tooltip("Light / dark / auto")
+                dark_btn.on("click", lambda: cycle_dark(dark_btn))
+                with ui.button(
                     icon="help",
                     on_click=lambda: show_help_dialog(),
-                ).props("flat color=black"):
+                ).props("flat", remove="color"):
                     ui.tooltip("Help")
 
             ui.add_head_html(
                 "<style>"
-                "body { background-color: #ffffff; }"
+                "body { background-color: var(--color-bg-surface); }"
                 ".nicegui-content { padding-left: 2rem; padding-right: 2rem; max-width: 100%; }"
                 "</style>"
             )
     else:
         with (
             ui.header()
-            .style("justify-content: space-between; background-color: #ffffff;")
+            .style("justify-content: space-between; background-color: var(--color-bg-surface);")
             .classes("drop-shadow-md")
         ):
             with ui.element("div").style("display: flex; gap: 0px;"):
@@ -720,7 +1077,7 @@ def page_init(header_text: Optional[str] = "", use_drawer: bool = False) -> None
                     "click", lambda: ui.navigate.to("/home")
                 )
                 ui.label(settings.TOPBAR_TEXT + header_text).classes(
-                    "text-h6 text-black cursor-pointer"
+                    "text-h6 cursor-pointer"
                 ).on("click", lambda: ui.navigate.to("/home"))
 
             with ui.element("div").style("display: flex; gap: 0px;"):
@@ -745,24 +1102,29 @@ def page_init(header_text: Optional[str] = "", use_drawer: bool = False) -> None
                 with ui.button(
                     icon="home",
                     on_click=lambda: ui.navigate.to("/home"),
-                ).props("flat color=black"):
+                ).props("flat", remove="color"):
                     ui.tooltip("Home")
                 with ui.button(
                     icon="person",
                     on_click=lambda: ui.navigate.to("/user"),
-                ).props("flat color=black"):
+                ).props("flat", remove="color"):
                     ui.tooltip("User settings")
+                with ui.button(
+                    icon=_dark_icon(app.storage.user.get("dark_mode", None)),
+                ).props("flat", remove="color") as dark_btn:
+                    ui.tooltip("Light / dark / auto")
+                dark_btn.on("click", lambda: cycle_dark(dark_btn))
                 with ui.button(
                     icon="help",
                     on_click=lambda: show_help_dialog(),
-                ).props("flat color=black"):
+                ).props("flat", remove="color"):
                     ui.tooltip("Help")
                 with ui.button(
                     icon="logout",
                     on_click=lambda: ui.navigate.to("/logout"),
-                ).props("flat color=black"):
+                ).props("flat", remove="color"):
                     ui.tooltip("Logout")
-                ui.add_head_html("<style>body {background-color: #ffffff;}</style>")
+                ui.add_head_html("<style>body {background-color: var(--color-bg-surface);}</style>")
 
     _show_announcement_banners()
 
@@ -959,11 +1321,11 @@ def table_upload(table) -> None:
     with ui.dialog() as dialog:
         with ui.card().style("min-width: 400px; padding: 32px;"):
             with ui.column().classes("w-full items-center") as status_column:
-                ui.label("Uploading files").classes("text-h6 q-mb-sm text-black")
+                ui.label("Uploading files").classes("text-h6 q-mb-sm")
                 status_label = ui.label("Please wait...").classes(
-                    "text-body1 q-mb-lg text-grey-7"
+                    "text-body1 q-mb-lg text-grey-7 upload-status"
                 )
-                ui.spinner(size="50px", color="black")
+                ui.spinner(size="50px", color="black").classes("upload-spinner")
                 status_column.visible = False
 
             with ui.column().classes("w-full items-center mt-10") as upload_column:
@@ -1008,10 +1370,8 @@ def table_upload(table) -> None:
 
                 dropzone = ui.html(
                     """
-                    <div class="w-96 h-40 flex items-center justify-center
-                                border-2 border-dashed border-gray-400
-                                rounded-2xl bg-gray-50
-                                hover:bg-gray-100 cursor-pointer text-gray-600">
+                    <div class="upload-dropzone w-96 h-40 flex items-center justify-center
+                                border-2 border-dashed rounded-2xl cursor-pointer">
                         Drag & drop files here or click to upload.
                         <br/><br/>
                         5 files at a maximum of 4GB can be uploaded at once.
@@ -1031,14 +1391,14 @@ def table_upload(table) -> None:
                         "dz.addEventListener('click', () => upl.$refs.qRef.pickFiles());"
                         "dz.addEventListener('dragover', e => {"
                         "  e.preventDefault();"
-                        "  dz.querySelector('div').classList.add('bg-gray-200');"
+                        "  dz.querySelector('div').classList.add('dragover');"
                         "});"
                         "dz.addEventListener('dragleave', () => {"
-                        "  dz.querySelector('div').classList.remove('bg-gray-200');"
+                        "  dz.querySelector('div').classList.remove('dragover');"
                         "});"
                         "dz.addEventListener('drop', e => {"
                         "  e.preventDefault();"
-                        "  dz.querySelector('div').classList.remove('bg-gray-200');"
+                        "  dz.querySelector('div').classList.remove('dragover');"
                         "  upl.$refs.qRef.addFiles(Array.from(e.dataTransfer.files));"
                         "});"
                         "setInterval(() => {"
@@ -1067,7 +1427,7 @@ def table_upload(table) -> None:
                         icon="cancel",
                         on_click=lambda: dialog.close(),
                     ) as cancel:
-                        cancel.props("color=black flat")
+                        cancel.props("flat", remove="color")
                         cancel.classes("cancel-style")
 
         dialog.open()
@@ -1205,13 +1565,13 @@ def table_transcribe(selected_row, on_complete=None) -> None:
         with (
             ui.card()
             .style(
-                "background-color: white; align-self: center; border: 0; width: 80%;"
+                "background-color: var(--color-bg-surface); align-self: center; border: 0; width: 80%;"
             )
             .classes("w-full no-shadow no-border")
         ):
             with ui.row().classes("w-full"):
                 ui.label("Transcription settings").style("width: 100%;").classes(
-                    "text-h6 q-mb-xl text-black"
+                    "text-h6 q-mb-xl"
                 )
 
                 with ui.column().classes("col-12 col-sm-24"):
@@ -1274,7 +1634,7 @@ def table_transcribe(selected_row, on_complete=None) -> None:
                     icon="cancel",
                 ) as cancel:
                     cancel.on("click", lambda: dialog.close())
-                    cancel.props("color=black flat")
+                    cancel.props("flat", remove="color")
                     cancel.classes("cancel-style")
 
                 with ui.button(
@@ -1290,7 +1650,7 @@ def table_transcribe(selected_row, on_complete=None) -> None:
                         on_complete=on_complete,
                     ),
                 ) as start:
-                    start.props("color=black flat")
+                    start.props("flat", remove="color")
                     start.classes("default-style")
 
             dialog.open()
@@ -1314,13 +1674,13 @@ def table_bulk_transcribe(table: ui.table, on_complete=None) -> None:
         with (
             ui.card()
             .style(
-                "background-color: white; align-self: center; border: 0; width: 80%;"
+                "background-color: var(--color-bg-surface); align-self: center; border: 0; width: 80%;"
             )
             .classes("w-full no-shadow no-border")
         ):
             with ui.row().classes("w-full"):
                 ui.label("Transcription settings").style("width: 100%;").classes(
-                    "text-h6 q-mb-xl text-black"
+                    "text-h6 q-mb-xl"
                 )
 
                 with ui.column().classes("w-full q-mb-sm").style(
@@ -1330,13 +1690,13 @@ def table_bulk_transcribe(table: ui.table, on_complete=None) -> None:
                         ui.icon("rtt", color="black").classes("text-body1")
                         ui.label(
                             f"{len(uploadable)} file(s) will be transcribed."
-                        ).classes("text-body2 text-black")
+                        ).classes("text-body2")
                     if already_done:
                         with ui.row().classes("items-center"):
                             ui.icon("block", color="black").classes("text-body1")
                             ui.label(
                                 f"{len(already_done)} completed file(s) will be skipped."
-                            ).classes("text-body2 text-black")
+                            ).classes("text-body2")
 
                 with ui.column().classes("col-12 col-sm-24"):
                     with ui.row().classes("items-center gap-1 q-mb-sm"):
@@ -1393,7 +1753,7 @@ def table_bulk_transcribe(table: ui.table, on_complete=None) -> None:
                     icon="cancel",
                 ) as cancel:
                     cancel.on("click", lambda: dialog.close())
-                    cancel.props("color=black flat")
+                    cancel.props("flat", remove="color")
                     cancel.classes("cancel-style")
 
                 with ui.button(
@@ -1412,7 +1772,7 @@ def table_bulk_transcribe(table: ui.table, on_complete=None) -> None:
                         ),
                     ),
                 ) as start:
-                    start.props("color=black flat")
+                    start.props("flat", remove="color")
                     start.classes("default-style")
 
             dialog.open()
@@ -1433,9 +1793,7 @@ def table_delete(table: ui.table) -> None:
             ).classes("text-subtitle2").style("margin-bottom: 10px;")
 
             with ui.row().classes("justify-between w-full"):
-                ui.button("Cancel", on_click=lambda: dialog.close()).props(
-                    "color=black"
-                )
+                ui.button("Cancel", on_click=lambda: dialog.close()).props("color=black")
                 ui.button(
                     "Delete",
                     on_click=lambda: __delete_files(table, dialog),
@@ -1513,9 +1871,9 @@ def table_bulk_export(table: ui.table) -> None:
     # Show progress dialog while fetching
     with ui.dialog() as progress_dialog:
         with ui.card().classes("p-6 items-center").style(
-            "min-width: 400px; background-color: #ffffff;"
+            "min-width: 400px; background-color: var(--color-bg-surface);"
         ):
-            ui.label("Preparing export...").classes("text-h6 text-black mb-2")
+            ui.label("Preparing export...").classes("text-h6 mb-2")
             progress_label = ui.label(f"Fetching file 0 of {len(completed)}").classes(
                 "text-body2 mb-2"
             )
@@ -1621,14 +1979,14 @@ def start_transcription(
             dialog.clear()
 
             with ui.card().style(
-                "background-color: white; align-self: center; border: 0; width: 50%;"
+                "background-color: var(--color-bg-surface); align-self: center; border: 0; width: 50%;"
             ):
-                ui.label(error).classes("text-h6 q-mb-md text-black")
+                ui.label(error).classes("text-h6 q-mb-md")
                 ui.button(
                     "Close",
                 ).on("click", lambda: dialog.close()).classes(
                     "button-close"
-                ).props("color=black flat")
+                ).props("flat", remove="color")
             dialog.open()
     else:
         if table is not None:
