@@ -22,7 +22,7 @@ import re
 
 from collections import defaultdict
 from datetime import datetime
-from nicegui import ui
+from nicegui import app, ui
 from utils.common import add_timezone_to_timestamp, default_styles, page_init
 from db.analytics import (
     get_page_views,
@@ -3084,18 +3084,34 @@ def analytics() -> None:
                     day_idx = (r["dow"] - 1) % 7
                     matrix[day_idx][r["hour"]] = r["views"]
 
+                # The default Blues scale ramps light->dark as the value rises,
+                # which is the light-mode convention: low/mid land on bright
+                # light-blue. On a dark background that's backwards (low cells
+                # glare, the max is dark). In dark mode use a flipped scale where
+                # brightness rises with the value: low = transparent/faint, high
+                # = brighter blue. Light mode keeps the original scale untouched.
+                if app.storage.user.get("dark_mode"):
+                    heatmap_colorscale = [
+                        [0.0, "rgba(45,140,224,0.0)"],
+                        [0.15, "rgba(45,140,224,0.5)"],
+                        [0.5, "#1f6fc0"],
+                        [1.0, "#3d97e0"],
+                    ]
+                else:
+                    heatmap_colorscale = [
+                        [0, "#f5f5f5"],
+                        [0.25, "#bbdefb"],
+                        [0.5, "#42a5f5"],
+                        [0.75, "#1565c0"],
+                        [1, "#0d47a1"],
+                    ]
+
                 fig = go.Figure(
                     data=go.Heatmap(
                         z=matrix,
                         x=[f"{h:02d}:00" for h in hours],
                         y=day_names,
-                        colorscale=[
-                            [0, "#f5f5f5"],
-                            [0.25, "#bbdefb"],
-                            [0.5, "#42a5f5"],
-                            [0.75, "#1565c0"],
-                            [1, "#0d47a1"],
-                        ],
+                        colorscale=heatmap_colorscale,
                         hovertemplate="Day: %{y}<br>Hour: %{x}<br>Views: %{z}<extra></extra>",
                         showscale=True,
                         colorbar=dict(title="Views", thickness=15),
