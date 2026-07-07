@@ -289,15 +289,15 @@ default_styles = """
            styles via !important; keyed off the .severity-* classes. */
         .body--dark .announcement-banner.severity-info {
             background-color: #1a5490 !important;
-            border-bottom-color: #2e74ad !important;
+            border-color: #2e74ad !important;
         }
         .body--dark .announcement-banner.severity-maintenance {
             background-color: #6f4f18 !important;
-            border-bottom-color: #a07a2c !important;
+            border-color: #a07a2c !important;
         }
         .body--dark .announcement-banner.severity-major_incident {
             background-color: #7a2727 !important;
-            border-bottom-color: #ab3a3a !important;
+            border-color: #ab3a3a !important;
         }
         .body--dark .announcement-banner.severity-info,
         .body--dark .announcement-banner.severity-info * {

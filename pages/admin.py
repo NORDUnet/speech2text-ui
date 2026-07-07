@@ -2637,7 +2637,9 @@ def _announcement_preview_dialog(message: str, severity: str = "info") -> None:
     with ui.dialog() as preview_dialog:
         with ui.card().style("width: 700px; max-width: 90vw; padding: 24px;"):
             ui.label("Banner preview").classes("text-h6 font-bold mb-4")
-            with ui.element("div").classes("announcement-banner").style(
+            with ui.element("div").classes(
+                f"announcement-banner severity-{severity}"
+            ).style(
                 f"background-color: {style['bg']}; border: 1px solid {style['border']};"
                 " border-radius: 4px; padding: 10px 20px; display: flex;"
                 " align-items: center; gap: 10px; width: 100%;"
