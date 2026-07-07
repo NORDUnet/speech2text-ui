@@ -1332,12 +1332,12 @@ def table_upload(table) -> None:
     ui.add_head_html(default_styles)
 
     with ui.dialog() as dialog:
-        with ui.card().style("min-width: 400px; padding: 32px;"):
+        with ui.card().style("min-width: 400px; max-width: 90vw; padding: 32px;"):
             with ui.column().classes("w-full items-center") as status_column:
                 ui.label("Uploading files").classes("text-h6 q-mb-sm")
                 status_label = ui.label("Please wait...").classes(
                     "text-body1 q-mb-lg text-grey-7 upload-status"
-                )
+                ).style("width: 100%; text-align: center; overflow-wrap: anywhere;")
                 ui.spinner(size="50px", color="black").classes("upload-spinner")
                 status_column.visible = False
 
