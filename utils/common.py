@@ -988,9 +988,10 @@ def page_init(header_text: Optional[str] = "", use_drawer: bool = False) -> None
                     ).on(
                         "click",
                         lambda: ui.run_javascript(
-                            "window.open('"
-                            + settings.API_URL
-                            + "/api/docs?theme="
+                            # Relative URL: the docs are served by the backend on the
+                            # same public host via nginx, and API_URL may point at
+                            # localhost (server-side hop), which the browser can't use.
+                            "window.open('/api/docs?theme="
                             + (
                                 "dark"
                                 if app.storage.user.get("dark_mode") is True
