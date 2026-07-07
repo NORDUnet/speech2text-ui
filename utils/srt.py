@@ -2580,7 +2580,7 @@ class SRTEditor:
                 ui.separator().classes("my-4")
 
                 # Footer
-                with ui.row().classes("w-full justify-between items-center").style(
+                with ui.row().classes("w-full justify-between items-center export-footer").style(
                     "position: sticky; bottom: -24px; background: white; padding-bottom: 8px; z-index: 1;"
                 ):
                     if is_bulk:

@@ -220,6 +220,19 @@ default_styles = """
             background-color: var(--color-bg-surface) !important;
             color: var(--color-text-primary);
         }
+        /* Transcribe dialog "N file(s) will be transcribed" notice: the light
+           cream (#fff3e0) is unreadable with the dark-mode white text/icons. */
+        .body--dark .transcribe-banner {
+            background-color: #4a3a1e !important;
+        }
+        .body--dark .transcribe-banner .q-icon {
+            color: #ffffff !important;
+        }
+        /* Export dialog sticky footer: inline `background: white` leaves a bright
+           strip at the bottom of the otherwise-dark dialog. */
+        .body--dark .export-footer {
+            background: var(--color-bg-surface) !important;
+        }
         /* The customer expansion carries `text-bold` to bold its header label,
            which also bolds every card inside it. Reset the expansion content to
            normal weight so grouped cards match the ungrouped "All users" card —
@@ -1683,7 +1696,7 @@ def table_bulk_transcribe(table: ui.table, on_complete=None) -> None:
                     "text-h6 q-mb-xl"
                 )
 
-                with ui.column().classes("w-full q-mb-sm").style(
+                with ui.column().classes("w-full q-mb-sm transcribe-banner").style(
                     "background-color: #fff3e0; padding: 8px 12px; border-radius: 4px;"
                 ):
                     with ui.row().classes("items-center"):
