@@ -37,7 +37,7 @@ from utils.token import (
     get_user_data,
     token_refresh,
 )
-from utils.helpers import storage_decrypt, customers_get
+from utils.helpers import storage_decrypt, customers_get, feedback_send
 
 settings = get_settings()
 # Keep large uploads off RAM (spill to disk past the spool threshold) and route
@@ -789,6 +789,80 @@ def _show_announcement_banners() -> None:
                 )
 
 
+def show_feedback_dialog() -> None:
+    """
+    Dialog for submitting feedback (bug report, feature idea or other).
+    Stored in the database for admin review; no notifications are sent.
+    """
+
+    try:
+        client = ui.context.client
+        current_path = client.page.path if client and client.page else ""
+    except Exception:
+        current_path = ""
+
+    with ui.dialog() as dialog:
+        with ui.card().style("min-width: 420px; max-width: 90vw;"):
+            ui.label("Send feedback").classes("text-h6")
+            ui.label(
+                "Tell us about a problem or suggest a new feature. Your feedback "
+                "is stored for the service administrators to review."
+            ).classes("text-subtitle2").style("margin-bottom: 10px;")
+
+            category_select = ui.select(
+                {"feature": "Feature idea", "bug": "Bug report", "other": "Other"},
+                value="feature",
+                label="Category",
+            ).style("width: 100%;")
+
+            message_input = (
+                ui.textarea("Your feedback")
+                .props("autogrow maxlength=5000 counter")
+                .style("width: 100%; margin-bottom: 10px;")
+            )
+
+            anonymous_checkbox = ui.checkbox("Submit anonymously")
+            anonymous_checkbox.tooltip(
+                "Your name and user ID are not stored with the feedback. "
+                "Only your organisation is recorded, so the right "
+                "administrators can see it."
+            )
+
+            def send() -> None:
+                message = (message_input.value or "").strip()
+                if not message:
+                    ui.notify("Please enter your feedback.", color="negative")
+                    return
+
+                if feedback_send(
+                    category_select.value,
+                    message,
+                    current_path,
+                    anonymous=anonymous_checkbox.value,
+                ):
+                    ui.notify("Thank you for your feedback!", color="positive")
+                    dialog.close()
+                else:
+                    ui.notify("Failed to send feedback.", color="negative")
+
+            with ui.row().classes("justify-end w-full gap-2"):
+                ui.button(
+                    "Cancel",
+                    on_click=dialog.close,
+                ).classes("button-close").props("flat", remove="color").style(
+                    "margin-top: 10px;"
+                )
+                ui.button(
+                    "Send",
+                    icon="send",
+                    on_click=send,
+                ).classes("default-style").props("flat", remove="color").style(
+                    "margin-top: 10px;"
+                )
+
+    dialog.open()
+
+
 def page_init(header_text: Optional[str] = "", use_drawer: bool = False) -> None:
     """
     Initialize the page with a header and background color.
@@ -942,6 +1016,7 @@ def page_init(header_text: Optional[str] = "", use_drawer: bool = False) -> None
             ("/admin", "group_work", "Groups"),
             ("/admin/rules", "rule", "User provisioning"),
             ("/admin/customers", "business", "Customers" if is_bofh else "Account"),
+            ("/admin/feedback", "reviews", "Feedback"),
         ]
 
         system_items = [
@@ -966,6 +1041,15 @@ def page_init(header_text: Optional[str] = "", use_drawer: bool = False) -> None
                         t = ui.tooltip(label)
                         t.set_visibility(show_tips)
                         menu_tooltips.append(t)
+
+                with ui.element("div").style(menu_item_style).classes(
+                    "menu-item"
+                ).on("click", lambda: show_feedback_dialog()):
+                    ui.icon("rate_review", color="black").style("font-size: 20px;")
+                    ui.label("Give feedback").classes("menu-label")
+                    t = ui.tooltip("Give feedback")
+                    t.set_visibility(show_tips)
+                    menu_tooltips.append(t)
 
                 if is_admin:
                     ui.separator().classes("menu-separator")
@@ -1061,6 +1145,12 @@ def page_init(header_text: Optional[str] = "", use_drawer: bool = False) -> None
 
             with ui.element("div").style("display: flex; gap: 0px;"):
                 with ui.button(
+                    "Feedback",
+                    icon="rate_review",
+                    on_click=lambda: show_feedback_dialog(),
+                ).props("flat", remove="color"):
+                    ui.tooltip("Report a problem or suggest a feature")
+                with ui.button(
                     icon=_dark_icon(app.storage.user.get("dark_mode", None)),
                 ).props("flat", remove="color") as dark_btn:
                     ui.tooltip("Light / dark / auto")
@@ -1122,6 +1212,12 @@ def page_init(header_text: Optional[str] = "", use_drawer: bool = False) -> None
                     on_click=lambda: ui.navigate.to("/user"),
                 ).props("flat", remove="color"):
                     ui.tooltip("User settings")
+                with ui.button(
+                    "Feedback",
+                    icon="rate_review",
+                    on_click=lambda: show_feedback_dialog(),
+                ).props("flat", remove="color"):
+                    ui.tooltip("Report a problem or suggest a feature")
                 with ui.button(
                     icon=_dark_icon(app.storage.user.get("dark_mode", None)),
                 ).props("flat", remove="color") as dark_btn:

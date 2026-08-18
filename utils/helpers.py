@@ -1007,3 +1007,90 @@ def announcement_delete(announcement_id: int) -> bool:
     except httpx.HTTPError as e:
         print(f"Error deleting announcement: {e}")
         return False
+
+
+def feedback_send(
+    category: str,
+    message: str,
+    page: Optional[str] = None,
+    anonymous: bool = False,
+) -> bool:
+    """
+    Submit user feedback to the backend. Stored in the database only;
+    no notifications are sent. With anonymous=True no user identity is
+    stored with the feedback.
+    """
+
+    try:
+        response = httpx.post(
+            f"{settings.API_URL}/api/v1/feedback",
+            headers=get_auth_header(),
+            json={
+                "category": category,
+                "message": message,
+                "page": page,
+                "anonymous": anonymous,
+            },
+        )
+        response.raise_for_status()
+        return True
+    except httpx.HTTPError:
+        return False
+
+
+def feedback_get() -> list:
+    """
+    Get feedback entries visible to the current admin, newest first.
+    """
+
+    try:
+        res = httpx.get(
+            f"{settings.API_URL}/api/v1/admin/feedback", headers=get_auth_header()
+        )
+        res.raise_for_status()
+        return res.json().get("result", [])
+    except httpx.HTTPError:
+        return []
+
+
+def feedback_update(
+    feedback_id: int,
+    status: Optional[str] = None,
+    admin_note: Optional[str] = None,
+) -> bool:
+    """
+    Update the triage status and/or admin note of a feedback entry.
+    """
+
+    payload: dict = {}
+    if status is not None:
+        payload["status"] = status
+    if admin_note is not None:
+        payload["admin_note"] = admin_note
+
+    try:
+        res = httpx.put(
+            f"{settings.API_URL}/api/v1/admin/feedback/{feedback_id}",
+            headers=get_auth_header(),
+            json=payload,
+        )
+        res.raise_for_status()
+        return True
+    except httpx.HTTPError:
+        return False
+
+
+def feedback_delete(feedback_id: int) -> bool:
+    """
+    Delete a feedback entry.
+    """
+
+    try:
+        res = httpx.delete(
+            f"{settings.API_URL}/api/v1/admin/feedback/{feedback_id}",
+            headers=get_auth_header(),
+        )
+        res.raise_for_status()
+        return True
+    except httpx.HTTPError:
+        return False
