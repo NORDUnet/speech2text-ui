@@ -59,6 +59,9 @@ from utils.helpers import (
     announcement_create,
     announcement_update,
     announcement_delete,
+    feedback_get,
+    feedback_update,
+    feedback_delete,
 )
 from utils.settings import get_settings
 from utils.token import (
@@ -3359,3 +3362,266 @@ def analytics() -> None:
                 ui.plotly(fig).classes("w-full")
             else:
                 ui.label("No action data yet.").classes("text-grey-6")
+
+
+FEEDBACK_CATEGORY_LABELS = {
+    "bug": "Bug report",
+    "feature": "Feature idea",
+    "other": "Other",
+}
+
+FEEDBACK_STATUS_LABELS = {
+    "new": "New",
+    "reviewed": "Reviewed",
+}
+
+
+def _feedback_detail_dialog(entry: dict, editable: bool) -> None:
+    """
+    Dialog showing a feedback entry in full. Status/note editing is
+    BOFH only; realm admins get a read-only view.
+    """
+
+    with ui.dialog() as dialog:
+        with ui.card().style("min-width: 520px; max-width: 90vw;"):
+            ui.label(
+                FEEDBACK_CATEGORY_LABELS.get(entry.get("category"), "Other")
+            ).classes("text-h6")
+            ui.label(
+                f"From {entry.get('username') or 'Anonymous'} "
+                f"({entry.get('realm', '')}) on {entry.get('created_label', '')}"
+                + (f" — page {entry['page']}" if entry.get("page") else "")
+            ).classes("text-subtitle2").style("margin-bottom: 10px;")
+
+            ui.label(entry.get("message", "")).style(
+                "white-space: pre-wrap; margin-bottom: 10px;"
+            )
+
+            if editable:
+                status_select = ui.select(
+                    FEEDBACK_STATUS_LABELS,
+                    value=entry.get("status", "new"),
+                    label="Status",
+                ).style("width: 100%;")
+
+                note_input = (
+                    ui.textarea("Admin note", value=entry.get("admin_note") or "")
+                    .props("autogrow maxlength=2000")
+                    .style("width: 100%; margin-bottom: 10px;")
+                )
+
+                def save() -> None:
+                    if feedback_update(
+                        entry["id"],
+                        status=status_select.value,
+                        admin_note=note_input.value or "",
+                    ):
+                        ui.notify("Feedback updated.", color="positive")
+                        dialog.close()
+                        ui.navigate.to("/admin/feedback")
+                    else:
+                        ui.notify("Failed to update feedback.", color="negative")
+
+            else:
+                ui.label(
+                    f"Status: {FEEDBACK_STATUS_LABELS.get(entry.get('status'), 'New')}"
+                ).classes("text-subtitle2")
+                if entry.get("admin_note"):
+                    ui.label(f"Note: {entry['admin_note']}").classes(
+                        "text-subtitle2"
+                    ).style("white-space: pre-wrap;")
+
+            with ui.row().classes("justify-end w-full gap-2"):
+                ui.button(
+                    "Close",
+                    on_click=dialog.close,
+                ).classes("button-close").props("flat", remove="color").style(
+                    "margin-top: 10px;"
+                )
+                if editable:
+                    ui.button(
+                        "Save",
+                        on_click=save,
+                    ).classes("default-style").props("flat", remove="color").style(
+                        "margin-top: 10px;"
+                    )
+
+    dialog.open()
+
+
+def _feedback_delete_confirm(entry: dict) -> None:
+    """Confirmation dialog for deleting a feedback entry."""
+
+    with ui.dialog() as dialog:
+        with ui.card():
+            ui.label("Delete feedback").classes("text-h6")
+            ui.label(
+                "Are you sure you want to delete this feedback entry? "
+                "This cannot be undone."
+            ).classes("text-subtitle2").style("margin-bottom: 10px;")
+
+            def do_delete() -> None:
+                if feedback_delete(entry["id"]):
+                    ui.notify("Feedback deleted.", color="positive")
+                    dialog.close()
+                    ui.navigate.to("/admin/feedback")
+                else:
+                    ui.notify("Failed to delete feedback.", color="negative")
+
+            with ui.row().classes("justify-end w-full gap-2"):
+                ui.button(
+                    "Cancel",
+                    on_click=dialog.close,
+                ).classes("button-close").props("flat", remove="color").style(
+                    "margin-top: 10px;"
+                )
+                ui.button(
+                    "Delete",
+                    on_click=do_delete,
+                ).classes("delete-style").props("flat", remove="color").style(
+                    "margin-top: 10px;"
+                )
+
+    dialog.open()
+
+
+@ui.page("/admin/feedback")
+def feedback_page() -> None:
+    """User feedback overview. Realm admins see their own realms; BOFH sees all."""
+
+    page_init(use_drawer=True)
+
+    if not get_admin_status():
+        ui.navigate.to("/home")
+        return
+
+    ui.add_head_html(default_styles)
+    ui.add_head_html(
+        "<style>body { background-color: var(--color-bg-surface); }</style>"
+    )
+
+    is_bofh = get_bofh_status()
+
+    ui.label("Feedback").classes("text-3xl font-bold")
+    ui.label(
+        "Feedback and feature suggestions submitted by users."
+    ).classes("text-body2 mb-4")
+
+    entries = feedback_get()
+
+    if not entries:
+        ui.label("No feedback yet.").classes("text-lg mt-4 text-grey-6")
+        return
+
+    for entry in entries:
+        try:
+            entry["created_label"] = add_timezone_to_timestamp(entry["created_at"])
+        except (ValueError, KeyError):
+            entry["created_label"] = entry.get("created_at", "")
+        if not entry.get("username"):
+            entry["username"] = "Anonymous"
+        entry["category_label"] = FEEDBACK_CATEGORY_LABELS.get(
+            entry.get("category"), "Other"
+        )
+        entry["status_label"] = FEEDBACK_STATUS_LABELS.get(
+            entry.get("status"), "New"
+        )
+        msg = entry.get("message", "")
+        entry["message_short"] = (msg[:80] + "…") if len(msg) > 80 else msg
+
+    columns = [
+        {
+            "name": "created_label",
+            "label": "Submitted",
+            "field": "created_label",
+            "align": "left",
+            "sortable": True,
+        },
+        {
+            "name": "username",
+            "label": "User",
+            "field": "username",
+            "align": "left",
+            "sortable": True,
+        },
+        {
+            "name": "realm",
+            "label": "Realm",
+            "field": "realm",
+            "align": "left",
+            "sortable": True,
+        },
+        {
+            "name": "category_label",
+            "label": "Category",
+            "field": "category_label",
+            "align": "left",
+            "sortable": True,
+        },
+        {
+            "name": "message_short",
+            "label": "Message",
+            "field": "message_short",
+            "align": "left",
+            "style": "max-width: 350px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;",
+        },
+        {
+            "name": "status_label",
+            "label": "Status",
+            "field": "status_label",
+            "align": "left",
+            "sortable": True,
+        },
+    ]
+
+    # Editing and deleting feedback is BOFH only; realm admins get a
+    # read-only view of their realms' feedback.
+    if is_bofh:
+        columns.append(
+            {
+                "name": "actions",
+                "label": "Actions",
+                "field": "actions",
+                "align": "center",
+            }
+        )
+
+    feedback_table = ui.table(
+        columns=columns,
+        rows=entries,
+        row_key="id",
+        pagination=25,
+    ).classes("w-full").props("flat bordered")
+
+    feedback_table.add_slot(
+        "body-cell-message_short",
+        r"""
+        <q-td :props="props">
+            <a
+                class="cursor-pointer text-primary"
+                @click="$parent.$emit('detail', props.row)"
+                style="text-decoration: underline;"
+            >
+                {{ props.row.message_short }}
+            </a>
+        </q-td>
+        """,
+    )
+
+    if is_bofh:
+        feedback_table.add_slot(
+            "body-cell-actions",
+            """
+            <q-td :props="props">
+                <q-btn flat round dense icon="edit" size="sm" color="grey-7"
+                    @click="$parent.$emit('detail', props.row)" />
+                <q-btn flat round dense icon="delete" size="sm" color="red"
+                    @click="$parent.$emit('delete', props.row)" />
+            </q-td>
+            """,
+        )
+        feedback_table.on("delete", lambda e: _feedback_delete_confirm(e.args))
+
+    feedback_table.on(
+        "detail", lambda e: _feedback_detail_dialog(e.args, editable=is_bofh)
+    )
