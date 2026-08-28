@@ -3398,9 +3398,16 @@ def _feedback_detail_dialog(entry: dict, editable: bool) -> None:
             )
 
             if editable:
+                # Coerce statuses that are no longer offered (e.g. rows written
+                # before the status set was reduced) so the select never gets a
+                # value outside its options.
+                status_value = entry.get("status", "new")
+                if status_value not in FEEDBACK_STATUS_LABELS:
+                    status_value = "new"
+
                 status_select = ui.select(
                     FEEDBACK_STATUS_LABELS,
-                    value=entry.get("status", "new"),
+                    value=status_value,
                     label="Status",
                 ).style("width: 100%;")
 
