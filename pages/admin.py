@@ -3373,9 +3373,6 @@ FEEDBACK_CATEGORY_LABELS = {
 FEEDBACK_STATUS_LABELS = {
     "new": "New",
     "reviewed": "Reviewed",
-    "planned": "Planned",
-    "done": "Done",
-    "declined": "Declined",
 }
 
 
