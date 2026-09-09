@@ -306,7 +306,7 @@ def email_save(email: str) -> None:
             ui.notify(f"Error: {data['result']['error']}", color="red")
             return None
 
-        ui.notify("E-mail address saved successfully", color="green")
+        ui.notify("E-mail address saved successfully", color="positive")
         return data["result"]
 
     except httpx.HTTPError:
@@ -339,9 +339,9 @@ def default_language_save(language: str) -> None:
             return None
 
         if language:
-            ui.notify(f"Default language set to {language}", color="green")
+            ui.notify(f"Default language set to {language}", color="positive")
         else:
-            ui.notify("Default language set to automatic default", color="green")
+            ui.notify("Default language set to automatic default", color="positive")
 
         return data["result"]
 
@@ -417,7 +417,7 @@ def email_save_notifications(
             ui.notify(f"Error: {data['result']['error']}", color="red")
             return
 
-        ui.notify("Notification preferences updated", color="green")
+        ui.notify("Notification preferences updated", color="positive")
 
     except httpx.HTTPError:
         ui.notify("Failed to update notification preferences", color="red")
@@ -477,7 +477,7 @@ def test_all_notifications() -> None:
         sent_to = result.get("sent_to", "unknown")
         ui.notify(
             f"{count} test notifications queued for {sent_to}",
-            color="green",
+            color="positive",
         )
 
     except httpx.HTTPError:

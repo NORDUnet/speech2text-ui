@@ -123,6 +123,14 @@ jobs_columns = [
 
 default_styles = """
     <style>
+        /* Shared brand palette for NiceGUI controls and success states. */
+        :root, .body--light, .body--dark {
+            --color-nordunet-blue: #005eb8;
+            --q-primary: var(--color-nordunet-blue) !important;
+            --q-secondary: var(--color-nordunet-blue) !important;
+            --q-accent: var(--color-nordunet-blue) !important;
+            --q-positive: var(--color-nordunet-blue) !important;
+        }
         /* ── Theme variables (light) ── */
         :root, .body--light {
             --color-bg-page: #ffffff;
@@ -134,12 +142,12 @@ default_styles = """
             --color-text-primary: #000000;
             --color-text-muted: #666666;
             --color-brand: #082954;
-            --color-accent: #d3ecbe;
-            --color-on-accent: #000000;
+            --color-accent: var(--color-nordunet-blue);
+            --color-on-accent: #ffffff;
             --color-on-brand: #ffffff;
             /* Primary action buttons (Upload, Start transcribing, etc.) */
-            --color-primary-btn-bg: #d3ecbe;
-            --color-primary-btn-text: #000000;
+            --color-primary-btn-bg: var(--color-nordunet-blue);
+            --color-primary-btn-text: #ffffff;
             /* Solid blue buttons (login, edit, etc.) */
             --color-btn-blue-bg: #082954;
             --color-delete-text: #721c24;
@@ -170,7 +178,7 @@ default_styles = """
             --color-gray-700: #ffffff;
             --color-gray-800: #ffffff;
             --color-brand: #5b9bd5;
-            --color-accent: #2e7d32;
+            --color-accent: var(--color-nordunet-blue);
             --color-on-accent: #ffffff;
             --color-on-brand: #ffffff;
             /* Primary action buttons + solid blue buttons: NORDUnet blue, white text */
@@ -268,20 +276,6 @@ default_styles = """
         .q-chip {
             background-color: var(--color-accent) !important;
             color: var(--color-on-accent) !important;
-        }
-        /* Selected-value chips (e.g. allowed-domains select) default to the
-           accent colour, which is green in dark mode. Use the same muted navy as
-           selected table rows so they fit the theme. Dark mode only — light mode
-           keeps the accent. */
-        .body--dark .q-chip {
-            background-color: #1b3a5e !important;
-            color: #ffffff !important;
-        }
-        /* "Enabled" toggles use color="positive" (green). Recolour to NORDUnet
-           blue in dark mode by overriding the variable Quasar's positive colour
-           reads. Light mode keeps green. */
-        .body--dark .q-toggle {
-            --q-positive: var(--color-btn-blue-bg) !important;
         }
         /* Announcement banners set light pastel backgrounds + dark text/icon
            inline (good for light mode). In dark mode, give each severity a dark
@@ -500,6 +494,23 @@ default_styles = """
         .q-btn.default-style {
             color: var(--color-primary-btn-text) !important;
         }
+        /* Secondary and disabled actions do not use the filled blue palette. */
+        .secondary-style {
+            background-color: var(--color-control-bg);
+            border: 1px solid var(--color-border);
+        }
+        .q-btn.secondary-style {
+            color: var(--color-text-primary) !important;
+        }
+        .q-btn.default-style.disabled,
+        .q-btn.secondary-style.disabled,
+        .q-btn.delete-style.disabled {
+            /* Match the original Quasar disabled treatment, including icons. */
+            color: var(--color-text-primary) !important;
+            background-color: var(--color-disabled-bg) !important;
+            border-color: var(--color-disabled-border) !important;
+            opacity: 0.6 !important;
+        }
         .q-btn.delete-style,
         .q-btn.cancel-style,
         .q-btn.button-close,
@@ -630,9 +641,9 @@ def show_help_dialog() -> None:
                             "Files are encrypted, only accessible to you, and auto-deleted after the scheduled deletion date."
                         ).classes("text-body2")
 
-                    with ui.card().classes("flex-1 bg-green-50 p-4"):
+                    with ui.card().classes("flex-1 bg-blue-50 p-4"):
                         with ui.row().classes("items-center gap-2 mb-2"):
-                            ui.icon("help", size="sm").classes("text-green-800")
+                            ui.icon("help", size="sm").classes("text-blue-800")
                             ui.label("Support").classes("text-subtitle1 font-semibold")
 
                         ui.label(
@@ -1067,8 +1078,9 @@ def page_init(header_text: Optional[str] = "", use_drawer: bool = False) -> None
                             t.set_visibility(show_tips)
                             menu_tooltips.append(t)
 
+                    # Temporarily hidden; remove hidden to restore the API menu item.
                     with ui.element("div").style(menu_item_style).classes(
-                        "menu-item"
+                        "menu-item hidden"
                     ).on(
                         "click",
                         lambda: ui.run_javascript(

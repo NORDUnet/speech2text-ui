@@ -142,7 +142,7 @@ class Customer:
                                 else:
                                     ui.label(
                                         f"Remaining minutes: {self.stats.get('remaining_minutes', 0):.0f}"
-                                    ).classes("text-sm font-semibold text-green-600")
+                                    ).classes("text-sm font-semibold text-positive")
 
                         with ui.column():
                             ui.label("Last month").classes("font-semibold")
