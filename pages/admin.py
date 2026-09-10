@@ -961,7 +961,7 @@ def health() -> None:
                         status_color = (
                             "bg-red-500"
                             if (datetime.now().timestamp() - seen) > 30
-                            else "bg-green-500"
+                            else "bg-positive"
                         )
                         status = (
                             "Offline"
@@ -2337,8 +2337,8 @@ def rules_page() -> None:
             )
         with ui.element("div").style("display: flex; gap: 10px;"):
             ui.button("Simulate provisioning").classes(
-                "default-style"
-            ).props("flat", remove="color").style("min-width: 160px; background-color: var(--color-bg-surface);").on(
+                "secondary-style"
+            ).props("flat", remove="color").style("min-width: 160px;").on(
                 "click", lambda: test_all_rules_dialog()
             )
             ui.button("Add rule").classes("default-style").props("flat", remove="color").style("min-width: 160px;").on(
@@ -3040,7 +3040,7 @@ def analytics() -> None:
 
     if wow["change_pct"] is not None:
         sign = "+" if wow["change_pct"] >= 0 else ""
-        wow_color = "#2e7d32" if wow["change_pct"] >= 0 else "#c62828"
+        wow_color = "#005eb8" if wow["change_pct"] >= 0 else "#c62828"
         wow_display = f'{sign}{wow["change_pct"]}%'
     else:
         wow_color = "#757575"
@@ -3050,7 +3050,7 @@ def analytics() -> None:
 
     action_summary = [r for r in summary if r["path"].startswith("/action/")]
     action_labels = {
-        "/action/upload": ("Uploads", "upload_file", "#2e7d32"),
+        "/action/upload": ("Uploads", "upload_file", "#005eb8"),
         "/action/transcription": ("Transcriptions", "record_voice_over", "#1565c0"),
         "/action/bulk_transcription": (
             "Bulk Transcriptions",
@@ -3063,7 +3063,7 @@ def analytics() -> None:
         "/action/edit_group": ("Groups Edited", "edit", "#4527a0"),
         "/action/delete_group": ("Groups Deleted", "group_remove", "#b71c1c"),
         "/action/remove_user": ("Users Removed", "person_remove", "#c62828"),
-        "/action/activate_user": ("Users Activated", "person_add", "#2e7d32"),
+        "/action/activate_user": ("Users Activated", "person_add", "#005eb8"),
         "/action/deactivate_user": ("Users Deactivated", "person_off", "#e65100"),
         "/action/set_admin": ("Admin Granted", "admin_panel_settings", "#1565c0"),
         "/action/remove_admin": ("Admin Revoked", "remove_moderator", "#bf360c"),
@@ -3222,7 +3222,7 @@ def analytics() -> None:
                         x=[r["path"] for r in summary],
                         y=[r["views_30d"] for r in summary],
                         name="Last 30 Days",
-                        marker_color="#4caf50",
+                        marker_color="#005eb8",
                     )
                 )
                 fig.update_layout(
@@ -3348,7 +3348,7 @@ def analytics() -> None:
                         x=action_names,
                         y=[r["views_30d"] for r in action_summary],
                         name="Last 30 Days",
-                        marker_color="#4caf50",
+                        marker_color="#005eb8",
                     )
                 )
                 fig.update_layout(

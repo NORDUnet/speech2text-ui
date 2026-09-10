@@ -1,0 +1,181 @@
+/* Opt-in ancestor keeps the Classic appearance and editing behavior intact. */
+.caption-style-minimal {
+    --caption-surface: #ffffff;
+    --caption-border: #e2e4e7;
+    --caption-text: #252a31;
+    --caption-muted: #626a76;
+    --caption-hover: #f5f6f7;
+    --caption-selected: #777f8b;
+    --caption-danger: #b34040;
+    --caption-error-bg: #fff9f9;
+}
+.body--dark .caption-style-minimal {
+    --caption-surface: #191c21;
+    --caption-border: #343a43;
+    --caption-text: #e5e7eb;
+    --caption-muted: #a9b0bb;
+    --caption-hover: #252a31;
+    --caption-selected: #a9b0bb;
+    --caption-danger: #ff9999;
+    --caption-error-bg: #291f23;
+}
+.caption-style-minimal .caption-card {
+    background: var(--caption-surface) !important;
+    color: var(--caption-text) !important;
+    border: 1px solid var(--caption-border) !important;
+    border-radius: 10px;
+    box-shadow: none !important;
+    padding: 16px 18px;
+    gap: 12px;
+    transition: border-color 120ms ease, background-color 120ms ease;
+}
+.caption-style-minimal .caption-card:hover {
+    border-color: var(--caption-selected) !important;
+}
+.caption-style-minimal .caption-card.caption-editing {
+    border-color: var(--caption-selected) !important;
+    box-shadow: inset 3px 0 var(--caption-selected) !important;
+}
+.caption-style-minimal .caption-card.caption-search-match {
+    border-color: #ba8b28 !important;
+}
+.caption-style-minimal .caption-card.caption-current {
+    box-shadow: inset 3px 0 #c7932a !important;
+}
+.caption-style-minimal .caption-card.caption-invalid {
+    border-color: var(--caption-danger) !important;
+    background: var(--caption-error-bg) !important;
+}
+.caption-style-minimal .caption-body {
+    font-size: 15px;
+    line-height: 1.7;
+    color: var(--caption-text);
+    overflow-wrap: anywhere;
+    min-width: 0;
+}
+.caption-style-minimal .caption-time-label,
+.caption-style-minimal .caption-meta-row > .nicegui-label {
+    color: var(--caption-muted) !important;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    font-weight: 500;
+}
+.caption-style-minimal .caption-meta-row {
+    align-items: center;
+    justify-content: flex-start;
+    gap: 12px;
+}
+.caption-style-minimal .caption-meta-row > .nicegui-label { margin-right: auto; }
+.caption-style-minimal .caption-time-input { width: 128px; max-width: 100%; }
+.caption-style-minimal .caption-time-input .q-field__native {
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    color: var(--caption-muted) !important;
+    text-align: center;
+}
+.caption-style-minimal .caption-time-input .q-field__control {
+    border-radius: 6px;
+    background: var(--caption-hover);
+}
+.caption-style-minimal .caption-text-input .q-field__control { border-radius: 7px; }
+.caption-style-minimal .caption-text-input .q-field__control:before {
+    border-color: var(--caption-border) !important;
+}
+.caption-style-minimal .caption-text-input .q-field__control:after {
+    border-color: var(--caption-selected) !important;
+}
+.caption-style-minimal .caption-text-input textarea {
+    font-size: 15px;
+    line-height: 1.7;
+    color: var(--caption-text) !important;
+}
+.caption-style-minimal .caption-btn-row {
+    justify-content: flex-start;
+    gap: 8px;
+    padding-top: 12px;
+    border-top: 1px solid var(--caption-border);
+}
+.caption-style-minimal .caption-btn-row .q-btn {
+    color: var(--caption-muted) !important;
+    text-transform: none;
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0;
+    border-radius: 7px;
+    border: 1px solid var(--caption-border);
+    background: var(--caption-hover);
+    box-shadow: 0 1px 1px rgb(0 0 0 / 3%);
+    min-height: 34px;
+    padding: 5px 10px;
+}
+.caption-style-minimal .caption-btn-row .q-btn:hover {
+    color: var(--caption-text) !important;
+    background: var(--caption-surface);
+    border-color: var(--caption-selected);
+}
+.caption-style-minimal .caption-btn-row .q-btn .q-icon { font-size: 17px; }
+.caption-style-minimal .caption-btn-row .q-btn.caption-delete-btn:hover {
+    color: var(--caption-danger) !important;
+    background: var(--caption-error-bg);
+    border-color: var(--caption-danger);
+}
+.caption-style-minimal .caption-btn-row .q-btn:focus-visible,
+.caption-style-minimal .caption-time-input:focus-within {
+    outline: 2px solid var(--caption-selected);
+    outline-offset: 2px;
+}
+.caption-style-toggle { border: 1px solid #80808055; border-radius: 7px; overflow: hidden; }
+.caption-style-toggle .q-btn { font-size: 12px; padding: 4px 12px; }
+@media (prefers-reduced-motion: reduce) {
+    .caption-style-minimal .caption-card { transition: none; }
+}
+/* Tailwind's important color utilities outrank unlayered important rules.
+   Put these overrides in its earlier base layer for both color systems. */
+@layer base {
+    .caption-style-minimal .caption-card .caption-btn-row .q-btn {
+        color: var(--caption-muted) !important;
+    }
+    .caption-style-minimal .caption-card .caption-btn-row .q-btn:hover {
+        color: var(--caption-text) !important;
+    }
+    .caption-style-minimal .caption-card .caption-btn-row .q-btn.caption-delete-btn {
+        color: var(--caption-muted) !important;
+    }
+    .caption-style-minimal .caption-card .caption-btn-row .q-btn.caption-delete-btn:hover {
+        color: var(--caption-danger) !important;
+    }
+    .caption-style-minimal .caption-card.caption-invalid {
+        border-color: var(--caption-danger) !important;
+    }
+}
+
+/* Review workspace uses the same quiet surfaces and spacing as caption cards. */
+.confidence-workspace {
+    --review-border: #e2e4e7;
+    --review-muted: #626a76;
+    --review-hover: #f5f6f7;
+    background: #fff;
+    color: #252a31;
+    border: 1px solid var(--review-border);
+    border-radius: 10px;
+    padding: 16px 18px;
+    gap: 12px;
+}
+.body--dark .confidence-workspace {
+    --review-border: #343a43;
+    --review-muted: #a9b0bb;
+    --review-hover: #252a31;
+    background: #191c21;
+    color: #e5e7eb;
+}
+.confidence-current { margin-top: 4px; }
+.confidence-actions { gap: 6px; padding-bottom: 2px; }
+.confidence-actions .q-btn { font-size: 12px; min-height: 30px; border-radius: 7px; }
+.confidence-actions .q-icon { font-size: 18px; }
+.confidence-queue { border-top: 1px solid var(--review-border); padding-top: 12px; gap: 10px; }
+.confidence-words { gap: 2px; }
+.confidence-word.q-btn { font-size: 13px; min-height: 36px; padding: 6px 10px; border-radius: 6px; font-weight: 400; }
+.confidence-word + .confidence-word { border-top: 1px solid var(--review-border); }
+.confidence-word-selected { background: var(--review-hover); box-shadow: inset 2px 0 var(--review-muted); }
+.confidence-pages { border-top: 1px solid var(--review-border); padding-top: 10px; gap: 6px; color: var(--review-muted); }
+.confidence-pages .q-btn { width: 26px; height: 26px; min-height: 26px; padding: 0; box-shadow: none; background: transparent; }
