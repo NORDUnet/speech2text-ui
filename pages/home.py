@@ -37,6 +37,9 @@ def create() -> None:
         """
         Main page of the application.
         """
+        ui.add_head_html("""<script>
+            if (window.top === window.self) location.replace('/workspace?view=' + encodeURIComponent(location.pathname + location.search));
+        </script>""")
         page_init(use_drawer=True)
 
         def toggle_buttons(selected: list) -> None:
@@ -44,7 +47,7 @@ def create() -> None:
             Toggle the state of buttons based on selected rows.
             """
             has_selection = bool(selected)
-            delete.set_enabled(has_selection)
+            delete.set_enabled(has_selection and all(r.get("status") != "Uploading" and (not r.get("local_upload") or r.get("status") == "Upload failed") for r in selected))
 
             # Update delete tooltip
             if has_selection:
@@ -116,7 +119,7 @@ def create() -> None:
         def table_handle_row_click(e: events.GenericEventArguments) -> None:
             if e.args.get("status") == "Completed":
                 table_click(e)
-            else:
+            elif e.args.get("status") == "Uploaded" and not e.args.get("local_upload"):
                 table_transcribe(e.args, on_complete=lambda: ui.timer(0.1, update_rows, once=True))
 
         ui.add_head_html(default_styles)
@@ -129,7 +132,7 @@ def create() -> None:
             "body-cell-status",
             """
             <q-td key="status" :props="props">
-                <p>{{ props.value }}</p>
+                <p>{{ props.value }}<span v-if="props.row.upload_progress" class="text-caption q-ml-sm">{{ props.row.upload_progress }}</span><span v-if="props.row.upload_error"> · Needs attention</span><q-tooltip v-if="props.row.upload_error">{{ props.row.upload_error }}</q-tooltip></p>
             </q-td>
             <q-td key="action" :props="props">
                 <q-btn
@@ -220,10 +223,10 @@ def create() -> None:
             table.update_rows(rows, clear_selection=False)
 
             has_active = any(
-                r["status"].lower() in ("transcribing", "queued", "uploading")
+                r["status"].lower() in ("transcribing", "queued", "uploading", "queuing", "submitting")
                 for r in rows
             )
-            poll_timer.interval = 5.0 if has_active else 30.0
+            poll_timer.interval = 1.0 if has_active else 5.0
 
         async def initial_load():
             rows = await jobs_get()
@@ -233,5 +236,5 @@ def create() -> None:
             # reload, so newly uploaded files would appear without selection boxes.
             table.selection = "multiple"
 
-        poll_timer = ui.timer(30.0, update_rows)
+        poll_timer = ui.timer(1.0, update_rows)
         ui.timer(0.0, initial_load, once=True)

@@ -34,7 +34,10 @@ from utils.helpers import (
     storage_encrypt,
 )
 
+from utils.background_upload import register as register_background_upload
+
 settings = get_settings()
+register_background_upload()
 
 create_files_table()
 create_srt()
