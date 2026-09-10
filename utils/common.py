@@ -15,13 +15,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import asyncio
 import glob
 import os
 import re
 import tempfile
 
-import aiofiles
 import httpx
 import pytz
 
@@ -1122,7 +1120,7 @@ def page_init(header_text: Optional[str] = "", use_drawer: bool = False) -> None
                 ui.separator()
 
                 with ui.element("div").style(menu_item_style).classes("menu-item").on(
-                    "click", lambda: ui.navigate.to("/logout")
+                    "click", lambda: ui.run_javascript("window.top.location.href = '/logout'")
                 ):
                     ui.icon("logout", color="black").style("font-size: 20px;")
                     ui.label("Logout").classes("menu-label")
@@ -1242,7 +1240,7 @@ def page_init(header_text: Optional[str] = "", use_drawer: bool = False) -> None
                     ui.tooltip("Help")
                 with ui.button(
                     icon="logout",
-                    on_click=lambda: ui.navigate.to("/logout"),
+                    on_click=lambda: ui.run_javascript("window.top.location.href = '/logout'"),
                 ).props("flat", remove="color"):
                     ui.tooltip("Logout")
                 ui.add_head_html("<style>body {background-color: var(--color-bg-surface);}</style>")
@@ -1283,7 +1281,9 @@ async def jobs_get() -> list:
             )
             response.raise_for_status()
     except httpx.HTTPError:
-        return []
+        from utils.background_upload import owner_queue
+        from utils.upload_state import merge_rows
+        return merge_rows([], owner_queue())
 
     # Get current time in user's timezone
     user_timezone = app.storage.user.get("timezone", "UTC")
@@ -1293,6 +1293,8 @@ async def jobs_get() -> list:
     for idx, job in enumerate(response.json()["result"]["jobs"]):
         if job["status"] == "in_progress":
             job["status"] = "transcribing"
+        elif job["status"] == "pending":
+            job["status"] = "queued"
 
         deletion_date = add_timezone_to_timestamp(job["deletion_date"])
         created_at = add_timezone_to_timestamp(job["created_at"])
@@ -1326,6 +1328,7 @@ async def jobs_get() -> list:
         job_data = {
             "id": idx,
             "uuid": job["uuid"],
+            "upload_id": job.get("external_id", ""),
             "filename": job["filename"],
             "created_at": created_at,
             "updated_at": updated_at,
@@ -1343,7 +1346,9 @@ async def jobs_get() -> list:
     # Sort jobs by created_at in descending order
     jobs.sort(key=lambda x: x["created_at"], reverse=True)
 
-    return jobs
+    from utils.background_upload import owner_queue
+    from utils.upload_state import merge_rows
+    return merge_rows(jobs, owner_queue())
 
 
 def table_click(event) -> None:
@@ -1371,285 +1376,9 @@ def table_click(event) -> None:
         )
 
 
-async def post_file(file_path: str, filename: str) -> bool:
-    """
-    Stream a file from disk to the API without loading it into memory.
-    """
-
-    async def _file_chunks():
-        # Stream the file from disk in bounded chunks so the UI never holds the
-        # whole file in memory while forwarding it to the backend.
-        async with aiofiles.open(file_path, "rb") as f:
-            while True:
-                chunk = await f.read(1024 * 1024)
-                if not chunk:
-                    break
-                yield chunk
-
-    try:
-        async with httpx.AsyncClient(timeout=900) as client:
-            response = await client.post(
-                f"{settings.API_URL}/api/v1/transcriber/stream",
-                params={"filename": filename},
-                content=_file_chunks(),
-                headers=get_auth_header(),
-            )
-
-            response.raise_for_status()
-
-            if response.status_code != 200:
-                raise httpx.HTTPStatusError(
-                    f"Upload failed, status code: {response.status_code}",
-                    request=response.request,
-                    response=response,
-                )
-    except httpx.HTTPStatusError as e:
-        ui.notify(
-            f"Error when uploading file: {str(e)}", type="negative", position="top"
-        )
-        return False
-
-    return True
-
-
-def format_size(bytes_val) -> str:
-    """
-    Format bytes into a human-readable string.
-    """
-    if bytes_val < 1024:
-        return f"{bytes_val} B"
-    elif bytes_val < 1024 * 1024:
-        return f"{bytes_val / 1024:.1f} KB"
-    elif bytes_val < 1024 * 1024 * 1024:
-        return f"{bytes_val / (1024 * 1024):.1f} MB"
-    else:
-        return f"{bytes_val / (1024 * 1024 * 1024):.1f} GB"
-
-
-def toggle_upload_status(upload_column, status_column, dialog):
-    upload_column.visible = False
-    status_column.visible = True
-    dialog.props("persistent")
-
-
 def table_upload(table) -> None:
-    """
-    Handle the click event on the Upload button with improved UX.
-    """
-
-    ui.add_head_html(default_styles)
-
-    with ui.dialog() as dialog:
-        with ui.card().style("min-width: 400px; max-width: 90vw; padding: 32px;"):
-            with ui.column().classes("w-full items-center") as status_column:
-                ui.label("Uploading files").classes("text-h6 q-mb-sm")
-                status_label = ui.label("Please wait...").classes(
-                    "text-body1 q-mb-lg text-grey-7 upload-status"
-                ).style("width: 100%; text-align: center; overflow-wrap: anywhere;")
-                ui.spinner(size="50px", color="black").classes("upload-spinner")
-                status_column.visible = False
-
-            with ui.column().classes("w-full items-center mt-10") as upload_column:
-                upload = (
-                    ui.upload(
-                        label="hidden",
-                        on_multi_upload=lambda e: handle_upload_with_feedback(
-                            e, dialog, table, status_label
-                        ),
-                        auto_upload=True,
-                        multiple=True,
-                        max_files=5,
-                    )
-                    .props(
-                        "accept=.mp3,.wav,.flac,.mp4,.mkv,.avi,.m4a,.aiff,.aif,.mov,.ogg,.opus,.webm,.wma,.mpg,.mpeg"
-                    )
-                    .style(
-                        "position: absolute; width: 0; height: 0; overflow: hidden; opacity: 0"
-                    )
-                )
-
-                upload.on(
-                    "start",
-                    lambda _: toggle_upload_status(
-                        upload_column, status_column, dialog
-                    ),
-                )
-                upload.on(
-                    "finish",
-                    lambda _: status_label.set_text("Finishing upload, please wait..."),
-                )
-
-                def on_byte_progress(e):
-                    uploaded = e.args.get("uploaded", 0)
-                    total = e.args.get("total", 0)
-                    if total > 0:
-                        status_label.set_text(
-                            f"{format_size(uploaded)} / {format_size(total)}"
-                        )
-
-                upload.on("byte_progress", on_byte_progress)
-
-                dropzone = ui.html(
-                    """
-                    <div class="upload-dropzone w-96 h-40 flex items-center justify-center
-                                border-2 border-dashed rounded-2xl cursor-pointer">
-                        Drag & drop files here or click to upload.
-                        <br/><br/>
-                        5 files at a maximum of 4GB can be uploaded at once.
-                    </div>
-                    """,
-                    sanitize=False,
-                )
-
-                upload_id = upload.id
-                dropzone_id = dropzone.id
-                ui.timer(
-                    0.1,
-                    lambda: ui.run_javascript(
-                        "const dz = getHtmlElement(" + str(dropzone_id) + ");"
-                        "const upl = getElement(" + str(upload_id) + ");"
-                        "if (!dz || !upl) return;"
-                        "dz.addEventListener('click', () => upl.$refs.qRef.pickFiles());"
-                        "dz.addEventListener('dragover', e => {"
-                        "  e.preventDefault();"
-                        "  dz.querySelector('div').classList.add('dragover');"
-                        "});"
-                        "dz.addEventListener('dragleave', () => {"
-                        "  dz.querySelector('div').classList.remove('dragover');"
-                        "});"
-                        "dz.addEventListener('drop', e => {"
-                        "  e.preventDefault();"
-                        "  dz.querySelector('div').classList.remove('dragover');"
-                        "  upl.$refs.qRef.addFiles(Array.from(e.dataTransfer.files));"
-                        "});"
-                        "setInterval(() => {"
-                        "  const qRef = upl.$refs.qRef;"
-                        "  if (!qRef || !qRef.files || qRef.files.length === 0) return;"
-                        "  let totalSize = 0, uploaded = 0, currentFile = '';"
-                        "  qRef.files.forEach(f => {"
-                        "    totalSize += f.size || 0;"
-                        "    uploaded += f.__uploaded || 0;"
-                        "    if (f.__status === 'uploading') currentFile = f.name;"
-                        "  });"
-                        "  if (currentFile) {"
-                        "    getElement("
-                        + str(upload_id)
-                        + ").$emit('byte_progress', {"
-                        "      uploaded: uploaded, total: totalSize, current_file: currentFile"
-                        "    });"
-                        "  }"
-                        "}, 500);"
-                    ),
-                    once=True,
-                )
-                with ui.row().style("justify-content: flex-end; gap: 12px;"):
-                    with ui.button(
-                        "Cancel",
-                        icon="cancel",
-                        on_click=lambda: dialog.close(),
-                    ) as cancel:
-                        cancel.props("flat", remove="color")
-                        cancel.classes("cancel-style")
-
-        dialog.open()
-
-
-async def handle_upload_with_feedback(files, dialog, table, status_label):
-    """
-    Handle file uploads with user feedback and validation.
-
-    The NiceGUI upload progress only covers browser -> UI.
-    This function keeps the dialog open while the UI forwards the file to the backend.
-    """
-
-    client = ui.context.client
-
-    file_items = []
-    total = len(files.files)
-
-    for index, file in enumerate(files.files, 1):
-        file_name = sanitize_filename(file.name)
-
-        if not client._deleted:
-            status_label.set_text(
-                f"Saving file {index} of {total} locally: {file_name}"
-            )
-
-        temp_file = tempfile.NamedTemporaryFile(
-            delete=False,
-            prefix=UPLOAD_TEMP_PREFIX,
-            suffix=UPLOAD_TEMP_SUFFIX,
-        )
-        temp_path = temp_file.name
-        temp_file.close()
-
-        try:
-            await file.save(temp_path)
-
-            # Enforce the per-file size limit server-side; the client-side cap is
-            # advisory and can be bypassed.
-            if os.path.getsize(temp_path) > settings.MAX_UPLOAD_BYTES:
-                os.remove(temp_path)
-                if not client._deleted:
-                    with client:
-                        ui.notify(
-                            f"{file_name} exceeds the maximum allowed size",
-                            type="negative",
-                            timeout=5000,
-                        )
-                continue
-
-            file_items.append((file_name, temp_path))
-        except Exception:
-            if os.path.exists(temp_path):
-                os.remove(temp_path)
-            raise
-
-    async def _upload():
-        for index, (file_name, temp_path) in enumerate(file_items, 1):
-            try:
-                if not client._deleted:
-                    with client:
-                        status_label.set_text(
-                            f"Storing and encrypting file {index} of {total}: {file_name}"
-                        )
-
-                success = await post_file(temp_path, file_name)
-
-                if not client._deleted:
-                    with client:
-                        if success:
-                            ui.notify(
-                                f"Successfully uploaded {file_name}",
-                                type="positive",
-                                timeout=3000,
-                            )
-                        else:
-                            ui.notify(
-                                f"Error uploading {file_name}",
-                                type="negative",
-                                timeout=5000,
-                            )
-            except Exception as e:
-                if not client._deleted:
-                    with client:
-                        ui.notify(
-                            f"Error uploading {file_name}: {str(e)}",
-                            type="negative",
-                            timeout=5000,
-                        )
-            finally:
-                if os.path.exists(temp_path):
-                    os.remove(temp_path)
-
-        if not client._deleted:
-            rows = await jobs_get()
-            with client:
-                if rows or not table.rows:
-                    table.update_rows(rows, clear_selection=False)
-                dialog.close()
-
-    asyncio.create_task(_upload())
+    """The stable outer page owns the uploader across content navigation."""
+    ui.run_javascript("window.parent.postMessage('scribe:upload', window.location.origin)")
 
 
 def _default_transcription_language() -> str:
@@ -1680,7 +1409,8 @@ def table_transcribe(selected_row, on_complete=None) -> None:
     """
     Handle the click event on the Transcribe button.
     """
-    default_language = _default_transcription_language()
+    saved = app.storage.user.get('upload_job_settings', {}).get(selected_row['uuid'], {})
+    default_language = saved.get('language') if saved.get('language') in settings.WHISPER_LANGUAGES else _default_transcription_language()
 
     with ui.dialog() as dialog:
         with (
@@ -1720,10 +1450,10 @@ def table_transcribe(selected_row, on_complete=None) -> None:
 
                 with ui.column().classes("col-12 col-sm-24") as verbatim_container:
                     verbatim = ui.checkbox(
-                        "Verbatim (include filler words, repetitions and unfinished sentences)"
+                        "Verbatim (include filler words, repetitions and unfinished sentences)", value=saved.get("verbatim", False)
                     ).classes("q-mt-sm")
                     verbatim_container.set_visibility(
-                        language.value.lower() == "swedish"
+                        language.value.lower() in ("swedish", "norwegian")
                     )
                     language.on_value_change(
                         lambda e: verbatim_container.set_visibility(
@@ -1736,14 +1466,14 @@ def table_transcribe(selected_row, on_complete=None) -> None:
                     ui.label("Number of speakers, automatic if not chosen").classes(
                         "text-subtitle2 q-mb-sm"
                     )
-                    speakers = ui.number(value="0", min=0).classes("w-full")
+                    speakers = ui.number(value=saved.get("speakers", 0), min=0).classes("w-full")
 
             with ui.row().classes("justify-between w-full"):
                 ui.label("Output format").classes("text-subtitle2 q-mb-sm")
                 output_format = (
                     ui.radio(
                         ["Transcript", "Subtitles"],
-                        value="Transcript",
+                        value=saved.get("output_format", "Transcript"),
                     )
                     .classes("w-full")
                     .props("inline")
@@ -1763,7 +1493,7 @@ def table_transcribe(selected_row, on_complete=None) -> None:
                     on_click=lambda: start_transcription(
                         [selected_row],
                         f"{language.value} (verbatim)"
-                        if verbatim.value
+                        if verbatim.value and language.value.lower() in ("swedish", "norwegian")
                         else language.value,
                         speakers.value,
                         output_format.value,
@@ -1933,6 +1663,12 @@ async def __delete_files(table: ui.table, dialog: ui.dialog) -> None:
 
     for row in selected:
         uuid = row["uuid"]
+        if row.get("local_upload"):
+            from utils.background_upload import owner_queue
+            uploads = owner_queue()
+            uploads[:] = [u for u in uploads if not (u.id == uuid and u.phase == "Upload failed")]
+            deleted += 1
+            continue
         try:
             async with httpx.AsyncClient(timeout=30) as client:
                 response = await client.delete(
