@@ -827,13 +827,8 @@ class SRTEditor:
                 ui.button(icon="stop", on_click=self.end_confidence_review).props('flat round dense aria-label="Stop review"', remove="color").tooltip("Stop playback and clear the selected word")
             self._confidence_review_list = ui.column().classes("w-full confidence-queue")
             self.refresh_confidence_review()
-            client = ui.context.client
-
-            async def start_review():
-                await client.connected()
-                await self.navigate_confidence()
-
-            ui.timer(0.1, start_review, once=True)
+            # Opening the editor must not scroll or seek. Review navigation
+            # starts only through the review controls or a word selection.
 
     def refresh_confidence_review(self):
         if self._confidence_review_list is None:
