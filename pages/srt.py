@@ -16,6 +16,10 @@
 # limitations under the License.
 
 import json
+import logging
+from concurrent.futures import ThreadPoolExecutor
+from time import perf_counter
+
 import httpx
 
 from nicegui import app, ui
@@ -30,6 +34,8 @@ from utils.video import create_video_proxy
 create_video_proxy()
 
 settings = get_settings()
+
+logger = logging.getLogger("uvicorn.error")
 
 
 def save_srt(job_id: str, data: str, editor: SRTEditor, data_format: str) -> None:
@@ -133,29 +139,35 @@ def create() -> None:
         ui.add_head_html(default_styles)
         ui.keyboard(on_key=editor.handle_key_event, ignore=[])
 
+        # Resolve auth and password in the page's own context so the fetch
+        # helper is safe to run from a worker thread.
+        auth_headers = get_auth_header()
+        result_payload = {
+            "encryption_password": storage_decrypt(
+                app.storage.user.get("encryption_password"),
+            )
+        }
+
+        def fetch_result(output_format: str) -> httpx.Response:
+            return httpx.request(
+                "GET",
+                f"{settings.API_URL}/api/v1/transcriber/{uuid}/result/{output_format}",
+                headers=auth_headers,
+                json=result_payload,
+            )
+
+        fetch_started = perf_counter()
+        words_future = None
         try:
             if data_format == "srt":
-                response = httpx.request(
-                    "GET",
-                    f"{settings.API_URL}/api/v1/transcriber/{uuid}/result/srt",
-                    headers=get_auth_header(),
-                    json={
-                        "encryption_password": storage_decrypt(
-                            app.storage.user.get("encryption_password"),
-                        )
-                    },
-                )
+                # The subtitle text and the word-timing JSON are separate
+                # backend calls, each decrypting the full result; fetch them
+                # concurrently so the page only waits for the slower one.
+                with ThreadPoolExecutor(max_workers=1) as pool:
+                    words_future = pool.submit(fetch_result, "txt")
+                    response = fetch_result("srt")
             else:
-                response = httpx.request(
-                    "GET",
-                    f"{settings.API_URL}/api/v1/transcriber/{uuid}/result/txt",
-                    headers=get_auth_header(),
-                    json={
-                        "encryption_password": storage_decrypt(
-                            app.storage.user.get("encryption_password"),
-                        )
-                    },
-                )
+                response = fetch_result("txt")
 
             response.raise_for_status()
             data = response.json()
@@ -165,27 +177,19 @@ def create() -> None:
             return
 
         # Word-level timing payload: for txt jobs it is part of the result
-        # just fetched; subtitle jobs need one extra fetch of their JSON
-        # result. Best-effort — jobs transcribed before word timestamps
-        # existed simply have none.
-        if data_format == "srt":
+        # just fetched; subtitle jobs get it from the parallel fetch of
+        # their JSON result. Best-effort — jobs transcribed before word
+        # timestamps existed simply have none.
+        if words_future is not None:
             try:
-                words_response = httpx.request(
-                    "GET",
-                    f"{settings.API_URL}/api/v1/transcriber/{uuid}/result/txt",
-                    headers=get_auth_header(),
-                    json={
-                        "encryption_password": storage_decrypt(
-                            app.storage.user.get("encryption_password"),
-                        )
-                    },
-                )
+                words_response = words_future.result()
                 words_response.raise_for_status()
                 editor.load_words(words_response.json().get("result"))
             except httpx.HTTPError:
                 pass
         else:
             editor.load_words(data["result"])
+        fetch_seconds = perf_counter() - fetch_started
 
         ui.add_head_html('<script src="/static/confidence-review.js?v=2" defer></script>')
 
@@ -410,12 +414,24 @@ def create() -> None:
                     with ui.scroll_area().style("height: calc(90vh - 140px);"):
                         editor.main_container = ui.column().classes("w-full h-full").props("id=subtitle-editor-captions")
 
+                    parse_started = perf_counter()
                     if data_format == "srt":
                         editor.parse_srt(data["result"])
                     else:
                         editor.parse_txt(data["result"])
 
+                    render_started = perf_counter()
                     editor.refresh_display()
+                    logger.info(
+                        "Editor open %s: fetch %.2fs, parse %.2fs, "
+                        "build captions %.2fs (%d captions, %d words)",
+                        uuid,
+                        fetch_seconds,
+                        render_started - parse_started,
+                        perf_counter() - render_started,
+                        len(editor.captions),
+                        len(editor.words),
+                    )
                 with splitter.after:
                     with ui.card().classes("w-full h-full"):
                         ui.label(filename).classes("w-full text-base font-medium").style(

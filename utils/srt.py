@@ -16,7 +16,10 @@
 # limitations under the License.
 
 import json
+import logging
 import re
+from time import perf_counter
+
 import httpx
 
 import html as html_module
@@ -40,6 +43,8 @@ CHARACTER_LIMIT = 42
 LOW_CONFIDENCE_THRESHOLD = 0.3
 
 settings = get_settings()
+
+logger = logging.getLogger("uvicorn.error")
 
 
 class SRTEditor:
@@ -882,6 +887,7 @@ class SRTEditor:
         texts = tuple(c.text for c in self.captions)
         key = (id(self.words), texts)
         if self._word_match_cache is None or self._word_match_cache[0] != key:
+            started = perf_counter()
             tokens = [token for text in texts for token in text.split()]
             matches = match_word_indices(self.words, tokens)
             rows = []
@@ -897,14 +903,37 @@ class SRTEditor:
                         "adjustments": word.get("timing_adjustments", []),
                         "word_id": f"{self.uuid}:{source_index}",
                     }))
-            self._word_match_cache = (key, rows)
-        offset = 0
-        for current in self.captions:
-            count = len(current.text.split())
-            if current is caption:
-                return self._word_match_cache[1][offset:offset + count]
-            offset += count
-        return []
+            # Slice bounds per caption object: the full render calls this
+            # twice per caption, and rediscovering the offset by re-splitting
+            # every preceding caption made opening large jobs quadratic.
+            slices = {}
+            offset = 0
+            for current in self.captions:
+                count = len(current.text.split())
+                slices[id(current)] = (offset, offset + count)
+                offset += count
+            self._word_match_cache = (key, rows, slices)
+            logger.info(
+                "Word matching for %s: %d words / %d tokens in %.2fs",
+                self.uuid, len(self.words), len(tokens), perf_counter() - started,
+            )
+        bounds = self._word_match_cache[2].get(id(caption))
+        if bounds is None:
+            # Same texts but new caption objects (undo/redo restores from
+            # snapshots): rebuild just the slice map, the matching holds.
+            slices = {}
+            offset = 0
+            for current in self.captions:
+                count = len(current.text.split())
+                slices[id(current)] = (offset, offset + count)
+                offset += count
+            self._word_match_cache = (
+                self._word_match_cache[0], self._word_match_cache[1], slices,
+            )
+            bounds = slices.get(id(caption))
+            if bounds is None:
+                return []
+        return self._word_match_cache[1][bounds[0]:bounds[1]]
 
     def render_caption_text(self, caption: SRTCaption) -> None:
         """
@@ -934,26 +963,33 @@ class SRTEditor:
                 token, start, end, confidence, provenance = word_times[index]
                 index += 1
                 if start is None or end is None:
-                    spans.append(
-                        '<span data-timing-source="unaligned">'
-                        f"{html_module.escape(token)}</span>"
-                    )
+                    spans.append(f"<span>{html_module.escape(token)}</span>")
                     continue
                 css = "w-seek"
-                if provenance["word_id"] == getattr(self, "_confidence_review_id", None):
+                in_review = provenance["word_id"] == getattr(
+                    self, "_confidence_review_id", None
+                )
+                if in_review:
                     css += " w-confidence-review"
-                if (
+                flagged = (
                     confidence is not None
                     and confidence < self.confidence_threshold
                     and provenance.get("word_id") not in self._reviewed_words
-                ):
+                )
+                if flagged:
                     css += " w-lowconf"
+                # data-word-id is only read by confidence-review.js to scroll
+                # a review target into view, and targets are always flagged
+                # words — emitting it on every word bloats large transcripts
+                # by megabytes and slows the DOM lookup.
+                word_id_attr = (
+                    f' data-word-id="{html_module.escape(provenance["word_id"], quote=True)}"'
+                    if (flagged or in_review)
+                    else ""
+                )
                 spans.append(
-                    f'<span class="{css}" data-s="{start:.3f}" data-e="{end:.3f}" '
-                    f'data-word-id="{html_module.escape(provenance["word_id"], quote=True)}" '
-                    f'data-timing-source="{html_module.escape(str(provenance["source"]), quote=True)}" '
-                    f'data-timing-adjustments="{html_module.escape(json.dumps(provenance["adjustments"]), quote=True)}">'
-                    f"{html_module.escape(token)}</span>"
+                    f'<span class="{css}" data-s="{start:.3f}" data-e="{end:.3f}"'
+                    f"{word_id_attr}>{html_module.escape(token)}</span>"
                 )
             lines_html.append(" ".join(spans))
 
