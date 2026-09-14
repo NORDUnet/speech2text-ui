@@ -1249,7 +1249,7 @@ def add_timezone_to_timestamp(timestamp: str) -> str:
     return local_time.strftime("%Y-%m-%d %H:%M")
 
 
-async def jobs_get() -> list:
+async def jobs_get(*, include_uploads: bool = True) -> list | None:
     """
     Get the list of transcription jobs from the API.
     """
@@ -1269,6 +1269,8 @@ async def jobs_get() -> list:
             )
             response.raise_for_status()
     except httpx.HTTPError:
+        if not include_uploads:
+            return None
         from utils.background_upload import owner_queue
         from utils.upload_state import merge_rows
         return merge_rows([], owner_queue())
@@ -1336,7 +1338,7 @@ async def jobs_get() -> list:
 
     from utils.background_upload import owner_queue
     from utils.upload_state import merge_rows
-    return merge_rows(jobs, owner_queue())
+    return merge_rows(jobs, owner_queue()) if include_uploads else jobs
 
 
 def table_click(event) -> None:

@@ -15,7 +15,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from time import monotonic
 from nicegui import ui, events
+from utils.background_upload import owner_queue
+from utils.upload_state import merge_rows
 from utils.common import (
     default_styles,
     page_init,
@@ -199,17 +202,26 @@ def create() -> None:
                     upload.classes("default-style")
                     upload.on("click", lambda: table_upload(table))
 
-        async def update_rows():
+        backend_rows = []
+        last_fetch = None
+
+        async def update_rows(force=True):
             """
             Update the rows in the table.
 
             Avoid clearing the existing table during temporary backend/API failures.
             This can happen while large uploads are being stored and encrypted.
             """
-            rows = await jobs_get()
-
-            if not rows and table.rows:
-                return
+            nonlocal backend_rows, last_fetch
+            uploads = owner_queue()
+            active = bool(uploads) or any(r['status'].lower() in ('transcribing', 'queued', 'uploading') for r in backend_rows)
+            interval = 5.0 if active else 30.0
+            if force or last_fetch is None or monotonic() - last_fetch >= interval:
+                fetched = await jobs_get(include_uploads=False)
+                last_fetch = monotonic()
+                if fetched is not None:
+                    backend_rows = fetched
+            rows = merge_rows(backend_rows, uploads)
 
             if not rows:
                 delete.set_enabled(False)
@@ -222,19 +234,7 @@ def create() -> None:
             table.selection = "multiple"
             table.update_rows(rows, clear_selection=False)
 
-            has_active = any(
-                r["status"].lower() in ("transcribing", "queued", "uploading", "queuing", "submitting")
-                for r in rows
-            )
-            poll_timer.interval = 1.0 if has_active else 5.0
-
-        async def initial_load():
-            rows = await jobs_get()
-            table.rows = rows
-            # Keep selection enabled even when empty: toggling to "none" and back
-            # does not reliably re-render the per-row checkboxes without a page
-            # reload, so newly uploaded files would appear without selection boxes.
-            table.selection = "multiple"
-
-        poll_timer = ui.timer(1.0, update_rows)
-        ui.timer(0.0, initial_load, once=True)
+        # Local progress is cheap and refreshed each second. The expensive API
+        # listing (including filename decryption) retains the original cadence.
+        ui.timer(1.0, lambda: update_rows(force=False))
+        ui.timer(0.0, update_rows, once=True)
