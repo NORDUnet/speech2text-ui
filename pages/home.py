@@ -223,6 +223,11 @@ def create() -> None:
                     backend_rows = fetched
             rows = merge_rows(backend_rows, uploads)
 
+            # Replacing identical rows rebuilds hovered tooltips every tick.
+            # Keep browser elements intact until displayed data changes.
+            if rows == table.rows:
+                return
+
             if not rows:
                 delete.set_enabled(False)
                 bulk_export.set_enabled(False)

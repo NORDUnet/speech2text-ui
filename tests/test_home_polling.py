@@ -14,7 +14,8 @@ class PollingTests(unittest.IsolatedAsyncioTestCase):
         now = [0.0]
         uploads = [Upload('test.mp4', 100)]
         fetch = AsyncMock(return_value=[])
-        table = SimpleNamespace(update_rows=Mock())
+        table = SimpleNamespace(rows=[])
+        table.update_rows = Mock(side_effect=lambda rows, **_: setattr(table, 'rows', rows))
         button = SimpleNamespace(set_enabled=Mock())
         env = dict(monotonic=lambda: now[0], owner_queue=lambda: uploads,
                    jobs_get=fetch, merge_rows=merge_rows, table=table,
@@ -33,6 +34,19 @@ class PollingTests(unittest.IsolatedAsyncioTestCase):
         now[0] = 5
         await update(force=False)
         self.assertEqual(fetch.await_count, 2)
+        renders = table.update_rows.call_count
+        await update(force=False)
+        await update()  # Even a fresh identical API listing must not repaint.
+        self.assertEqual(table.update_rows.call_count, renders)
+        uploads[0].phase = 'Upload failed'
+        uploads[0].error = 'The upload tab was closed before the transfer finished.'
+        await update(force=False)
+        renders = table.update_rows.call_count
+        for tick in range(6, 10):
+            now[0] = tick
+            await update(force=False)
+        self.assertEqual(table.update_rows.call_count, renders)
+        self.assertEqual(table.rows[0]['upload_error'], uploads[0].error)
         fetch.return_value = [dict(uuid='saved', status='Completed')]
         uploads.clear()
         await update()
