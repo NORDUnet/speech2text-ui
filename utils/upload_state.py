@@ -1,6 +1,7 @@
 """Session-scoped upload progress, independent of any page's elements."""
 from dataclasses import dataclass, field
 from uuid import uuid4
+from time import perf_counter
 
 @dataclass
 class Upload:
@@ -10,6 +11,7 @@ class Upload:
     phase: str = 'Uploading'
     received: bool = False
     progress: int = 0
+    started_at: float = field(default_factory=perf_counter)
     backend_id: str | None = None
     error: str = ''
     options: dict = field(default_factory=dict)

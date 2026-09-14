@@ -1,5 +1,7 @@
 """Persistent browser upload host; content pages navigate in a same-origin frame."""
 import asyncio
+import logging
+from time import perf_counter
 import json
 import os
 import secrets
@@ -16,6 +18,7 @@ from utils.transcription_options import transcription_options
 
 settings = get_settings()
 _tasks = set()
+logger = logging.getLogger("uvicorn.error")
 
 
 def owner_queue():
@@ -27,6 +30,7 @@ def owner_queue():
 
 async def submit_upload(upload, headers, user_storage=None):
     """Retry transient failures with the upload identity, never as a new job."""
+    started = perf_counter()
     upload.phase = 'Submitting'
     options = upload.options
     payload = dict(language=options['language'] + (' (verbatim)' if options['verbatim'] else ''),
@@ -48,6 +52,7 @@ async def submit_upload(upload, headers, user_storage=None):
                 response.raise_for_status()
                 if response.json()['result']['status'] not in ('pending', 'in_progress', 'completed'):
                     raise ValueError('Job was not queued')
+                logger.info('Upload %s: queue request %.2fs; total %.2fs', upload.id, perf_counter() - started, perf_counter() - upload.started_at)
                 upload.phase = 'Queued'
                 upload.error = ''
                 return
@@ -66,6 +71,7 @@ async def submit_upload(upload, headers, user_storage=None):
 
 
 async def forward_file(upload, path, headers, user_storage=None):
+    started = perf_counter()
     async def chunks():
         async with aiofiles.open(path, 'rb') as stream:
             while chunk := await stream.read(1024 * 1024):
@@ -78,6 +84,7 @@ async def forward_file(upload, path, headers, user_storage=None):
             result.raise_for_status()
             upload.backend_id = result.json()['result']['uuid']
             upload.phase = 'Uploaded'
+            logger.info('Upload %s: backend transfer and encrypted storage %.2fs', upload.id, perf_counter() - started)
     except Exception:
         upload.phase = 'Upload failed'
         upload.error = 'Could not store this file. Please upload it again.'
@@ -122,13 +129,17 @@ def register():
                     item = next((u for u in batch if not u.received and u.filename == sanitize_filename(event.file.name)), None)
                     if item is None:
                         return
+                    received_at = perf_counter()
+                    logger.info('Upload %s: browser transfer and framework buffering %.2fs', item.id, received_at - item.started_at)
                     headers = dict(get_auth_header() or {})
                     item.received = True
                     item.phase = 'Uploading'
                     fd, path = tempfile.mkstemp(prefix='scribe-ui-upload-', suffix='.upload', dir=settings.UPLOAD_TMP_DIR or None)
                     os.close(fd)
                     try:
+                        copy_started = perf_counter()
                         await event.file.save(path)
+                        logger.info('Upload %s: local file copy %.2fs (%d bytes)', item.id, perf_counter() - copy_started, os.path.getsize(path))
                         if os.path.getsize(path) > settings.MAX_UPLOAD_BYTES:
                             raise ValueError('File too large')
                         # Snapshot credentials while the authenticated host still exists.
