@@ -181,8 +181,12 @@ class SRTEditor:
         # the post-mutation state — also coalesces bursts (replace all).
         if self._preview_refresh_pending:
             return
+        # Card slots are cleared on blur/selection changes. A timer owned by
+        # that card would be deleted before firing, leaving pending stuck.
+        # Keep the deferred preview refresh in the stable page-level slot.
+        with ui.context.client:
+            ui.timer(0.15, push, once=True)
         self._preview_refresh_pending = True
-        ui.timer(0.15, push, once=True)
 
     def mark_as_changed(self) -> None:
         """
