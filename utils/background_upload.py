@@ -123,7 +123,13 @@ def register():
         with ui.column().classes('upload-overlay') as overlay:
             with ui.card().style('width:560px;max-width:94vw;max-height:90vh;overflow-y:auto;padding:24px;gap:16px'):
                 ui.label('Upload & transcription settings').classes('text-lg font-medium')
-                ui.label('Choose up to 5 files. Each will be transcribed automatically after uploading.').classes('text-sm')
+                max_size = float(settings.MAX_UPLOAD_BYTES)
+                for size_unit in ('bytes', 'KiB', 'MiB', 'GiB', 'TiB'):
+                    if max_size < 1024 or size_unit == 'TiB':
+                        break
+                    max_size /= 1024
+                upload_limits = f'Choose up to 5 files, each no larger than {max_size:g} {size_unit}.'
+                ui.label(upload_limits + ' Each file will be transcribed automatically after uploading.').classes('text-sm')
 
                 async def receive(event):
                     item = next((u for u in batch if not u.received and u.filename == sanitize_filename(event.file.name)), None)
@@ -153,7 +159,7 @@ def register():
 
                 uploader = ui.upload(label='Choose files', on_upload=receive, multiple=True, auto_upload=False,
                                      max_files=5, max_file_size=settings.MAX_UPLOAD_BYTES,
-                                     on_rejected=lambda: ui.notify("Choose up to 5 supported media files within the upload size limit.", type="warning")).classes('w-full')
+                                     on_rejected=lambda: ui.notify(upload_limits + " Use a supported audio or video format.", type="warning")).classes('w-full')
                 uploader.props('flat bordered color=grey-2 text-color=grey-9 hide-upload-btn accept=.mp3,.wav,.flac,.mp4,.mkv,.avi,.m4a,.aiff,.aif,.mov,.ogg,.opus,.webm,.wma,.mpg,.mpeg')
 
                 uploader.add_slot('header', r"""
@@ -216,7 +222,7 @@ def register():
                             ui.notify('Choose at least one file.', type='warning')
                             return
                         if len(files) > 5 or any(not 0 <= int(f['size']) <= settings.MAX_UPLOAD_BYTES for f in files):
-                            ui.notify('Choose up to 5 files within the upload size limit.', type='warning')
+                            ui.notify(upload_limits, type='warning')
                             return
                         batch.clear()
                         for metadata in files:
