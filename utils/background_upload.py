@@ -194,6 +194,9 @@ def register():
                 language = ui.select(settings.WHISPER_LANGUAGES, label='Language',
                                      value=_default_transcription_language()).classes('w-full').props('outlined dense')
                 output_format = ui.radio(['Transcript', 'Subtitles'], value='Transcript').props('inline')
+                with ui.column().classes('gap-1 text-sm opacity-70'):
+                    ui.label('Transcript: Text organised by speaker, for reading and editing.')
+                    ui.label('Subtitles: Timed captions for displaying alongside your audio or video.')
                 with ui.expansion('More options', icon='tune').classes('w-full'):
                     speakers = ui.number('Number of speakers', value=0, min=0, step=1).classes('w-full').props('outlined dense')
                     ui.label('0 detects the number automatically.').classes('text-xs opacity-60')
