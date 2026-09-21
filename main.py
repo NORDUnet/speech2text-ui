@@ -274,6 +274,14 @@ async def index(request: Request) -> None:
                         ).style(
                             "width: 220px; height: 44px; margin-top: 30px;"
                         )
+                ui.html(
+                    "Transcriptions are made with generative AI<br>"
+                    "Mistakes may be included"
+                ).classes(
+                    "text-body1 text-center text-grey-5 w-full"
+                ).style(
+                    "margin-top: 20px;"
+                )
 
 
 @ui.page("/logout")
