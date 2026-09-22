@@ -22,8 +22,9 @@ class Upload:
         return 'Saving file…' if self.received else f'{self.progress}% transferred'
 
     def row(self):
-        return dict(uuid=self.id, id=self.id, filename=self.filename,
-                    status="Uploading" if self.phase == "Uploaded" else self.phase, upload_error=self.error, local_upload=True, upload_progress=self.progress_label(),
+        identifier = self.backend_id if self.phase == "Failed" and self.backend_id else self.id
+        return dict(uuid=identifier, id=identifier, filename=self.filename,
+                    status="Uploading" if self.phase == "Uploaded" else self.phase, upload_error=self.error, local_upload=identifier == self.id, upload_progress=self.progress_label(),
                     created_at='', updated_at='', deletion_date='', job_type='',
                     language='', model_type='', output_format='')
 
@@ -52,11 +53,8 @@ def merge_rows(rows, uploads):
         if row['status'] in ('Queued', 'Transcribing', 'Completed', 'Failed'):
             continue
         retained.append(upload)
-        if upload.phase == 'Submission failed' and row['status'] == 'Uploaded':
-            # File is safely stored. Normal Transcribe is the recovery action.
-            row['upload_error'] = upload.error
-        elif upload.phase == 'Upload failed':
-            row.update(status='Upload failed', upload_error=upload.error)
+        if upload.phase == 'Failed':
+            row.update(status='Failed', upload_error=upload.error)
         else:
             row.update(status='Uploading' if row['status'] == 'Uploading' else 'Queuing',
                        local_upload=True, upload_progress=upload.progress_label())

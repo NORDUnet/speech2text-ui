@@ -27,9 +27,7 @@ from utils.common import (
     table_click,
     table_upload,
     table_delete,
-    table_transcribe,
     table_bulk_export,
-    table_bulk_transcribe,
 )
 
 
@@ -50,7 +48,7 @@ def create() -> None:
             Toggle the state of buttons based on selected rows.
             """
             has_selection = bool(selected)
-            delete.set_enabled(has_selection and all(r.get("status") != "Uploading" and (not r.get("local_upload") or r.get("status") == "Upload failed") for r in selected))
+            delete.set_enabled(has_selection and all(r.get("status") != "Uploading" and (not r.get("local_upload") or r.get("status") == "Failed") for r in selected))
 
             # Update delete tooltip
             if has_selection:
@@ -73,23 +71,6 @@ def create() -> None:
             else:
                 export_tooltip.text = "Select one or more already completed files to export"
 
-            # Enable bulk transcribe when 1+ uploaded jobs are selected
-            uploaded = [r for r in selected if r.get("status") == "Uploaded"]
-            already_transcribed = [r for r in selected if r.get("status") == "Completed"]
-            bulk_transcribe.set_enabled(len(uploaded) >= 1)
-
-            # Update transcribe tooltip
-            if not has_selection:
-                transcribe_tooltip.text = "Select one or more files to transcribe"
-            elif len(uploaded) >= 1 and len(already_transcribed) > 0:
-                transcribe_tooltip.text = "One or more files are already transcribed"
-            elif len(uploaded) >= 1:
-                transcribe_tooltip.text = "Transcribe selected files"
-            elif len(already_transcribed) > 0:
-                transcribe_tooltip.text = "One or more files are already transcribed"
-            else:
-                transcribe_tooltip.text = "Select one or more files to transcribe"
-
         table = ui.table(
             on_select=lambda e: toggle_buttons(e.selection),
             columns=jobs_columns,
@@ -100,7 +81,8 @@ def create() -> None:
         table.props(":selected-rows-label=\"(n) => n + ' files selected'\"")
         # Don't show Quasar's "No data available" bottom layer — an empty list is
         # the expected state before a user uploads anything.
-        table.props("hide-no-data")
+        table.props("hide-no-data flat separator=horizontal")
+        ui.add_head_html('<link rel="stylesheet" href="/static/files-table.css?v=2">')
 
         # Custom header checkbox that selects/deselects ALL rows across all pages
         table.add_slot(
@@ -122,31 +104,46 @@ def create() -> None:
         def table_handle_row_click(e: events.GenericEventArguments) -> None:
             if e.args.get("status") == "Completed":
                 table_click(e)
-            elif e.args.get("status") == "Uploaded" and not e.args.get("local_upload"):
-                table_transcribe(e.args, on_complete=lambda: ui.timer(0.1, update_rows, once=True))
 
         ui.add_head_html(default_styles)
 
         table.style(
-            "width: 100%; height: calc(100vh - 100px - var(--banner-offset, 0px)); box-shadow: none; font-size: 18px;"
+            "width: 100%; height: calc(100vh - 100px - var(--banner-offset, 0px)); box-shadow: none;"
         )
-        table.classes("table-style")
+        table.classes("files-table")
         table.add_slot(
             "body-cell-status",
             """
             <q-td key="status" :props="props">
-                <p>{{ props.value }}<span v-if="props.row.upload_progress" class="text-caption q-ml-sm">{{ props.row.upload_progress }}</span><span v-if="props.row.upload_error"> · Needs attention</span><q-tooltip v-if="props.row.upload_error">{{ props.row.upload_error }}</q-tooltip></p>
+                <div class="file-status" :class="{'file-status-failed': props.value === 'Failed'}">
+                    <span class="file-status-dot" aria-hidden="true"></span>
+                    <span>{{ props.value }}</span>
+                    <q-icon v-if="props.row.upload_error" name="info_outline" size="16px" tabindex="0" aria-label="Failure details">
+                        <q-tooltip max-width="300px">{{ props.row.upload_error }}</q-tooltip>
+                    </q-icon>
+                </div>
+                <div v-if="props.row.upload_progress" class="file-progress">{{ props.row.upload_progress }}</div>
             </q-td>
+            """,
+        )
+        table.add_slot(
+            "body-cell-action",
+            """
             <q-td key="action" :props="props">
-                <q-btn
-                    v-if="props.row.status === 'Uploaded' || props.row.status === 'Completed'"
-                    :label="props.row.status === 'Completed' ? 'Edit' : 'Transcribe'"
-                    color="black"
-                    text-color="white"
-                    class="row-action-btn"
-                    style="width: 120px; height: 40px;"
-                    @click="$parent.$emit('table_handle_row_click', props.row)"
+                <q-btn v-if="props.row.status === 'Completed'"
+                    label="Edit" icon="edit" flat no-caps dense
+                    class="file-edit-button"
+                    :aria-label="'Edit ' + props.row.filename"
+                    @click.stop="$parent.$emit('table_handle_row_click', props.row)"
                 />
+            </q-td>
+            """,
+        )
+        table.add_slot(
+            "body-cell-filename",
+            """
+            <q-td key="filename" :props="props">
+                <span class="file-name">{{ props.value }}<q-tooltip>{{ props.value }}</q-tooltip></span>
             </q-td>
             """,
         )
@@ -170,36 +167,27 @@ def create() -> None:
         table.on("table_handle_row_click", table_handle_row_click)
 
         with table.add_slot("top-left"):
-            ui.label("My files").classes("text-3xl font-bold")
+            ui.label("My files").classes("files-title")
 
         with table.add_slot("top-right"):
-            with ui.row().classes("items-center"):
+            with ui.row().classes("items-center files-actions"):
                 with ui.button("Delete", icon="delete") as delete:
-                    delete.props("flat", remove="color")
-                    delete.classes("delete-style")
+                    delete.props("flat no-caps", remove="color")
+                    delete.classes("file-toolbar-button")
                     delete.on("click", lambda: table_delete(table))
                     delete.set_enabled(False)
                     delete_tooltip = ui.tooltip("Select one or more files to delete")
 
                 with ui.button("Export", icon="download") as bulk_export:
-                    bulk_export.props("flat", remove="color")
-                    bulk_export.classes("default-style")
+                    bulk_export.props("flat no-caps", remove="color")
+                    bulk_export.classes("file-toolbar-button")
                     bulk_export.on("click", lambda: table_bulk_export(table))
                     bulk_export.set_enabled(False)
                     export_tooltip = ui.tooltip("Select one or more files to export")
 
-                with ui.button("Transcribe", icon="rtt") as bulk_transcribe:
-                    bulk_transcribe.props("flat", remove="color")
-                    bulk_transcribe.classes("default-style")
-                    bulk_transcribe.on("click", lambda: table_bulk_transcribe(table, on_complete=lambda: ui.timer(0.1, update_rows, once=True)))
-                    bulk_transcribe.set_enabled(False)
-                    transcribe_tooltip = ui.tooltip(
-                        "Select one or more files to transcribe"
-                    )
-
-                with ui.button("Upload", icon="upload") as upload:
-                    upload.props("flat", remove="color")
-                    upload.classes("default-style")
+                with ui.button("Upload & transcribe", icon="upload") as upload:
+                    upload.props("flat no-caps", remove="color")
+                    upload.classes("file-toolbar-button file-upload-button")
                     upload.on("click", lambda: table_upload(table))
 
         backend_rows = []
@@ -231,7 +219,6 @@ def create() -> None:
             if not rows:
                 delete.set_enabled(False)
                 bulk_export.set_enabled(False)
-                bulk_transcribe.set_enabled(False)
 
             # Keep selection enabled even when empty: toggling to "none" and back
             # does not reliably re-render the per-row checkboxes without a page

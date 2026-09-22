@@ -28,6 +28,26 @@ def owner_queue():
     return queues.setdefault(storage['_upload_owner'], [])
 
 
+async def finalize_failure(upload, headers):
+    """Persist failure only if the backend has not accepted the queue request."""
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.post(
+                settings.API_URL + '/api/v1/transcriber/uploads/' + upload.id.removeprefix('upload:') + '/fail',
+                headers=headers)
+            response.raise_for_status()
+            result = response.json()['result']
+        upload.backend_id = result['uuid']
+        if result['status'] in ('pending', 'in_progress', 'completed'):
+            upload.phase, upload.error = 'Queued', ''
+        elif result['status'] == 'failed':
+            upload.phase = 'Failed'
+            upload.error = result.get('error') or 'Upload or transcription failed. Upload the file again.'
+    except (httpx.HTTPError, ValueError, KeyError):
+        # Keep the local failure visible and reconcile when the backend returns.
+        pass
+
+
 async def submit_upload(upload, headers, user_storage=None):
     """Retry transient failures with the upload identity, never as a new job."""
     started = perf_counter()
@@ -57,17 +77,18 @@ async def submit_upload(upload, headers, user_storage=None):
                 upload.error = ''
                 return
         except httpx.HTTPStatusError as error:
-            detail = 'Automatic transcription could not be queued. Use Transcribe to try again.'
+            detail = 'Transcription could not start. Upload the file again to start a new job.'
             if error.response.status_code == 403:
-                detail = 'Transcription was refused. Check your quota or sign in again, then use Transcribe.'
+                detail = 'Transcription was refused. Check your quota or sign in again, then upload the file again.'
             upload.error = detail
             break
         except (httpx.RequestError, ValueError, KeyError):
             if attempt == 0:
                 await asyncio.sleep(1)
                 continue
-            upload.error = 'Could not confirm transcription submission. Refresh the table before trying Transcribe again.'
-    upload.phase = 'Submission failed'
+            upload.error = 'Could not confirm that transcription started. Checking the job status before marking it failed.'
+    upload.phase = 'Failed'
+    await finalize_failure(upload, current_headers)
 
 
 async def forward_file(upload, path, headers, user_storage=None):
@@ -86,16 +107,13 @@ async def forward_file(upload, path, headers, user_storage=None):
             upload.phase = 'Uploaded'
             logger.info('Upload %s: backend transfer and encrypted storage %.2fs', upload.id, perf_counter() - started)
     except Exception:
-        upload.phase = 'Upload failed'
+        upload.phase = 'Failed'
         upload.error = 'Could not store this file. Please upload it again.'
     finally:
         os.unlink(path)
     if upload.phase != 'Uploaded':
+        await finalize_failure(upload, headers)
         return
-    if user_storage is not None:
-        drafts = dict(user_storage.get('upload_job_settings', {}))
-        drafts[upload.backend_id] = dict(upload.options)
-        user_storage['upload_job_settings'] = drafts
     if upload.options:
         await submit_upload(upload, headers, user_storage)
 
@@ -154,7 +172,7 @@ def register():
                         task.add_done_callback(_tasks.discard)
                     except Exception:
                         os.unlink(path)
-                        item.phase = 'Upload failed'
+                        item.phase = 'Failed'
                         item.error = 'Could not receive this file. Check its size and try again.'
 
                 uploader = ui.upload(label='Choose files', on_upload=receive, multiple=True, auto_upload=False,
@@ -255,7 +273,7 @@ def register():
                 def failed():
                     for item in batch:
                         if not item.received:
-                            item.phase = 'Upload failed'
+                            item.phase = 'Failed'
                             item.error = 'Transfer interrupted. Please upload this file again.'
                 uploader.on('failed', failed)
                 with ui.row().classes('w-full justify-end gap-2'):
@@ -318,10 +336,15 @@ def register():
                     pass  # A brief client disconnect must not fail the upload.
             ui.run_javascript('window.scribeUploading = ' + json.dumps(transferring) + ';')
         ui.timer(0.5, sync)
+        async def reconcile_failures():
+            for item in list(uploads):
+                if item.phase == 'Failed' and (item.received or item.backend_id):
+                    await finalize_failure(item, get_auth_header())
+        ui.timer(30, reconcile_failures)
         ui.timer(30, token_refresh)
         def disconnected():
             for item in batch:
                 if not item.received and item.phase == 'Uploading':
-                    item.phase = 'Upload failed'
-                    item.error = 'The upload tab was closed before the transfer finished.'
+                    item.phase = 'Failed'
+                    item.error = 'The upload tab was closed before the transfer finished. Upload the file again.'
         client.on_delete(disconnected)

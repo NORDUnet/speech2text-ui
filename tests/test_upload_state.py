@@ -25,7 +25,7 @@ class UploadStateTests(unittest.TestCase):
         self.assertEqual(pending, [second])
 
     def test_error_remains_visible(self):
-        upload = Upload('failed.mp4', 1, phase='Upload failed', error='Interrupted')
+        upload = Upload('failed.mp4', 1, phase='Failed', error='Interrupted')
         self.assertEqual(merge_rows([], [upload])[0]['upload_error'], 'Interrupted')
 
     def test_auto_submission_never_exposes_manual_transcribe_early(self):
@@ -41,10 +41,10 @@ class UploadStateTests(unittest.TestCase):
         self.assertEqual(pending, [])
 
     def test_submission_failure_reconciles_lost_success_response(self):
-        upload = Upload('x', 1, backend_id='real', phase='Submission failed', error='Retry', options={'language': 'English'})
+        upload = Upload('x', 1, backend_id='real', phase='Failed', error='Retry', options={'language': 'English'})
         pending = [upload]
         row = merge_rows([dict(uuid='real', status='Uploaded')], pending)[0]
-        self.assertEqual(row['status'], 'Uploaded')
+        self.assertEqual(row['status'], 'Failed')
         self.assertEqual(row['upload_error'], 'Retry')
         self.assertFalse(row.get('local_upload'))
         row = merge_rows([dict(uuid='real', status='Completed')], pending)[0]

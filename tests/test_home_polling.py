@@ -38,7 +38,7 @@ class PollingTests(unittest.IsolatedAsyncioTestCase):
         await update(force=False)
         await update()  # Even a fresh identical API listing must not repaint.
         self.assertEqual(table.update_rows.call_count, renders)
-        uploads[0].phase = 'Upload failed'
+        uploads[0].phase = 'Failed'
         uploads[0].error = 'The upload tab was closed before the transfer finished.'
         await update(force=False)
         renders = table.update_rows.call_count

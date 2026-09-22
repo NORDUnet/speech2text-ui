@@ -1297,6 +1297,9 @@ async def jobs_get(*, include_uploads: bool = True) -> list | None:
             "job_type": job_type,
         }
 
+        if job["status"] == "failed":
+            reason = job.get("error") or "Upload or transcription failed."
+            job_data["upload_error"] = reason if "upload the file again" in reason.lower() else reason + " Upload the file again to start a new job."
         jobs.append(job_data)
 
     # Sort jobs by created_at in descending order
@@ -1361,230 +1364,6 @@ def _default_transcription_language() -> str:
     return settings.WHISPER_LANGUAGES[0]
 
 
-def table_transcribe(selected_row, on_complete=None) -> None:
-    """
-    Handle the click event on the Transcribe button.
-    """
-    saved = app.storage.user.get('upload_job_settings', {}).get(selected_row['uuid'], {})
-    default_language = saved.get('language') if saved.get('language') in settings.WHISPER_LANGUAGES else _default_transcription_language()
-
-    with ui.dialog() as dialog:
-        with (
-            ui.card()
-            .style(
-                "background-color: var(--color-bg-surface); align-self: center; border: 0; width: 80%;"
-            )
-            .classes("w-full no-shadow no-border")
-        ):
-            with ui.row().classes("w-full"):
-                ui.label("Transcription settings").style("width: 100%;").classes(
-                    "text-h6 q-mb-xl"
-                )
-
-                with ui.column().classes("col-12 col-sm-24"):
-                    ui.label("Filename:").classes("text-subtitle2 q-mb-sm")
-                    ui.label(f"{selected_row['filename']}")
-
-                with ui.column().classes("col-12 col-sm-24"):
-                    with ui.row().classes("items-center gap-1 q-mb-sm"):
-                        ui.label("Language").classes("text-subtitle2")
-                        language_help = ui.icon("help_outline").classes(
-                            "text-grey-6 cursor-pointer"
-                        ).style("font-size: 16px;")
-                        language_help.tooltip(
-                            "Preselected from your default. "
-                            "Click to set your personal default in Settings."
-                        )
-                        language_help.on(
-                            "click",
-                            lambda: (dialog.close(), ui.navigate.to("/user")),
-                        )
-                    language = ui.select(
-                        settings.WHISPER_LANGUAGES,
-                        value=default_language,
-                    ).classes("w-full")
-
-                with ui.column().classes("col-12 col-sm-24") as verbatim_container:
-                    verbatim = ui.checkbox(
-                        "Verbatim (include filler words, repetitions and unfinished sentences)", value=saved.get("verbatim", False)
-                    ).classes("q-mt-sm")
-                    verbatim_container.set_visibility(
-                        language.value.lower() in ("swedish", "norwegian")
-                    )
-                    language.on_value_change(
-                        lambda e: verbatim_container.set_visibility(
-                            e.value.lower() == "swedish"
-                            or e.value.lower() == "norwegian"
-                        )
-                    )
-
-                with ui.column().classes("col-12 col-sm-24"):
-                    ui.label("Number of speakers, automatic if not chosen").classes(
-                        "text-subtitle2 q-mb-sm"
-                    )
-                    speakers = ui.number(value=saved.get("speakers", 0), min=0).classes("w-full")
-
-            with ui.row().classes("justify-between w-full"):
-                ui.label("Output format").classes("text-subtitle2 q-mb-sm")
-                output_format = (
-                    ui.radio(
-                        ["Transcript", "Subtitles"],
-                        value=saved.get("output_format", "Transcript"),
-                    )
-                    .classes("w-full")
-                    .props("inline")
-                )
-
-            with ui.row().classes("justify-between w-full"):
-                with ui.button(
-                    "Cancel",
-                    icon="cancel",
-                ) as cancel:
-                    cancel.on("click", lambda: dialog.close())
-                    cancel.props("flat", remove="color")
-                    cancel.classes("cancel-style")
-
-                with ui.button(
-                    "Start transcribing",
-                    on_click=lambda: start_transcription(
-                        [selected_row],
-                        f"{language.value} (verbatim)"
-                        if verbatim.value and language.value.lower() in ("swedish", "norwegian")
-                        else language.value,
-                        speakers.value,
-                        output_format.value,
-                        dialog,
-                        on_complete=on_complete,
-                    ),
-                ) as start:
-                    start.props("flat", remove="color")
-                    start.classes("default-style")
-
-            dialog.open()
-
-
-def table_bulk_transcribe(table: ui.table, on_complete=None) -> None:
-    """
-    Handle bulk transcription of selected uploaded jobs.
-    Shows the same transcription settings dialog but applies to all selected rows.
-    """
-    selected = table.selected
-    uploadable = [r for r in selected if r.get("status") == "Uploaded"]
-    already_done = [r for r in selected if r.get("status") == "Completed"]
-    if not uploadable:
-        ui.notify("No uploaded files selected", type="warning", position="top")
-        return
-
-    default_language = _default_transcription_language()
-
-    with ui.dialog() as dialog:
-        with (
-            ui.card()
-            .style(
-                "background-color: var(--color-bg-surface); align-self: center; border: 0; width: 80%;"
-            )
-            .classes("w-full no-shadow no-border")
-        ):
-            with ui.row().classes("w-full"):
-                ui.label("Transcription settings").style("width: 100%;").classes(
-                    "text-h6 q-mb-xl"
-                )
-
-                with ui.column().classes("w-full q-mb-sm transcribe-banner").style(
-                    "background-color: #fff3e0; padding: 8px 12px; border-radius: 4px;"
-                ):
-                    with ui.row().classes("items-center"):
-                        ui.icon("rtt", color="black").classes("text-body1")
-                        ui.label(
-                            f"{len(uploadable)} file(s) will be transcribed."
-                        ).classes("text-body2")
-                    if already_done:
-                        with ui.row().classes("items-center"):
-                            ui.icon("block", color="black").classes("text-body1")
-                            ui.label(
-                                f"{len(already_done)} completed file(s) will be skipped."
-                            ).classes("text-body2")
-
-                with ui.column().classes("col-12 col-sm-24"):
-                    with ui.row().classes("items-center gap-1 q-mb-sm"):
-                        ui.label("Language").classes("text-subtitle2")
-                        language_help = ui.icon("help_outline").classes(
-                            "text-grey-6 cursor-pointer"
-                        ).style("font-size: 16px;")
-                        language_help.tooltip(
-                            "Preselected from your default. "
-                            "Click to set your personal default in Settings."
-                        )
-                        language_help.on(
-                            "click",
-                            lambda: (dialog.close(), ui.navigate.to("/user")),
-                        )
-                    language = ui.select(
-                        settings.WHISPER_LANGUAGES,
-                        value=default_language,
-                    ).classes("w-full")
-
-                with ui.column().classes("col-12 col-sm-24") as verbatim_container:
-                    verbatim = ui.checkbox(
-                        "Verbatim (include filler words, repetitions and unfinished sentences)"
-                    ).classes("q-mt-sm")
-                    verbatim_container.set_visibility(
-                        language.value.lower() == "swedish"
-                    )
-                    language.on_value_change(
-                        lambda e: verbatim_container.set_visibility(
-                            e.value.lower() == "swedish"
-                        )
-                    )
-
-                with ui.column().classes("col-12 col-sm-24"):
-                    ui.label("Number of speakers, automatic if not chosen").classes(
-                        "text-subtitle2 q-mb-sm"
-                    )
-                    speakers = ui.number(value="0", min=0).classes("w-full")
-
-            with ui.row().classes("justify-between w-full"):
-                ui.label("Output format").classes("text-subtitle2 q-mb-sm")
-                output_format = (
-                    ui.radio(
-                        ["Transcript", "Subtitles"],
-                        value="Transcript",
-                    )
-                    .classes("w-full")
-                    .props("inline")
-                )
-
-            with ui.row().classes("justify-between w-full"):
-                with ui.button(
-                    "Cancel",
-                    icon="cancel",
-                ) as cancel:
-                    cancel.on("click", lambda: dialog.close())
-                    cancel.props("flat", remove="color")
-                    cancel.classes("cancel-style")
-
-                with ui.button(
-                    "Start transcribing",
-                    on_click=lambda: (
-                        start_transcription(
-                            uploadable,
-                            f"{language.value} (verbatim)"
-                            if verbatim.value
-                            else language.value,
-                            speakers.value,
-                            output_format.value,
-                            dialog,
-                            table,
-                            on_complete=on_complete,
-                        ),
-                    ),
-                ) as start:
-                    start.props("flat", remove="color")
-                    start.classes("default-style")
-
-            dialog.open()
-
-
 def table_delete(table: ui.table) -> None:
     """
     Handle the click event on the Delete button.
@@ -1622,7 +1401,7 @@ async def __delete_files(table: ui.table, dialog: ui.dialog) -> None:
         if row.get("local_upload"):
             from utils.background_upload import owner_queue
             uploads = owner_queue()
-            uploads[:] = [u for u in uploads if not (u.id == uuid and u.phase == "Upload failed")]
+            uploads[:] = [u for u in uploads if not (u.id == uuid and u.phase == "Failed")]
             deleted += 1
             continue
         try:
@@ -1632,6 +1411,9 @@ async def __delete_files(table: ui.table, dialog: ui.dialog) -> None:
                     headers=get_auth_header(),
                 )
                 response.raise_for_status()
+            from utils.background_upload import owner_queue
+            uploads = owner_queue()
+            uploads[:] = [u for u in uploads if u.backend_id != uuid]
             deleted += 1
         except (httpx.HTTPStatusError, httpx.RequestError):
             failed += 1
@@ -1742,68 +1524,3 @@ def table_bulk_export(table: ui.table) -> None:
         first_editor.show_export_dialog(first_filename, bulk_editors=editors)
 
     ui.timer(0.1, fetch_and_show, once=True)
-
-
-def start_transcription(
-    rows: list,
-    language: str,
-    speakers: str,
-    output_format: str,
-    dialog: ui.dialog,
-    table: ui.table = None,
-    on_complete=None,
-) -> None:
-    selected_language = language
-    error = ""
-
-    if output_format == "Subtitles":
-        output_format = "SRT"
-    elif output_format in ("Transcript", "Transcribed text"):
-        output_format = "TXT"
-    else:
-        output_format = "TXT"
-
-    for row in rows:
-        uuid = row["uuid"]
-
-        try:
-            response = httpx.put(
-                f"{settings.API_URL}/api/v1/transcriber/{uuid}",
-                json={
-                    "language": f"{selected_language}",
-                    "speakers": int(speakers),
-                    "output_format": output_format,
-                    "encryption_password": storage_decrypt(
-                        app.storage.user.get("encryption_password"),
-                    ),
-                },
-                headers=get_auth_header(),
-            )
-            response.raise_for_status()
-        except httpx.HTTPError:
-            if response.status_code == 403:
-                error = response.json()["result"]["error"]
-            else:
-                error = "Error: Failed to start transcription."
-            break
-
-    if error:
-        with dialog:
-            dialog.clear()
-
-            with ui.card().style(
-                "background-color: var(--color-bg-surface); align-self: center; border: 0; width: 50%;"
-            ):
-                ui.label(error).classes("text-h6 q-mb-md")
-                ui.button(
-                    "Close",
-                ).on("click", lambda: dialog.close()).classes(
-                    "button-close"
-                ).props("flat", remove="color")
-            dialog.open()
-    else:
-        if table is not None:
-            table.selected = []
-        dialog.close()
-        if on_complete is not None:
-            on_complete()
