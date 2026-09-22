@@ -35,7 +35,7 @@ from utils.token import (
     get_user_data,
     token_refresh,
 )
-from utils.helpers import storage_decrypt, customers_get, feedback_send
+from utils.helpers import storage_decrypt, feedback_send
 
 settings = get_settings()
 # Keep large uploads off RAM (spill to disk past the spool threshold) and route
@@ -537,128 +537,82 @@ default_styles = """
 """
 
 
-def _get_support_contact_email() -> str:
-    """
-    Look up the support contact email for the current user's customer.
-    """
-
-    try:
-        user_data = get_user_data() or {}
-        user_realm = user_data.get("realm", "")
-        if not user_realm:
-            return ""
-
-        customers_data = customers_get()
-        customers = (
-            customers_data.get("result", []) if isinstance(customers_data, dict) else []
-        )
-
-        for c in customers:
-            c_realms = [
-                r.strip() for r in (c.get("realms") or "").split(",") if r.strip()
-            ]
-            if user_realm in c_realms:
-                return c.get("support_contact_email", "")
-    except Exception:
-        pass
-
-    return ""
-
-
 def show_help_dialog() -> None:
-    """
-    Show a help dialog with information about the application.
-    """
+    """Explain the current upload and editing workflow without API lookups."""
+    max_size = float(settings.MAX_UPLOAD_BYTES)
+    for size_unit in ('bytes', 'KiB', 'MiB', 'GiB', 'TiB'):
+        if max_size < 1024 or size_unit == 'TiB':
+            break
+        max_size /= 1024
+
+    steps = [
+        ('Upload & configure', 'upload',
+         f'Choose up to 5 files, max {max_size:g} {size_unit} each. Select language and output type, then click Upload & transcribe.'),
+        ('Monitor in My files', 'folder',
+         'Follow upload progress and job status. Transcription starts automatically after upload.',
+         'Keep this tab open until transfer finishes. You can browse other pages within it.'),
+        ('Review & edit', 'edit',
+         'Click Edit on a completed file. Correct the text, preview subtitles and check their timing and readability.'),
+        ('Save & export', 'download',
+         'Save your changes, then choose Export to download your transcript or subtitles.'),
+    ]
+
+    def help_box(title, icon, description, note=None, tint=False):
+        with ui.card().classes('no-shadow w-full').style(
+            'border: 1px solid var(--color-border, #dedede); border-radius: 12px; '
+            'padding: 18px; gap: 10px; height: 100%; '
+            + ('background: color-mix(in srgb, #005eb8 5%, var(--color-bg-surface, white));' if tint
+               else 'background: var(--color-bg-surface, white);')
+        ):
+            with ui.row().classes('items-center no-wrap gap-2'):
+                ui.icon(icon).classes('text-xl opacity-70')
+                ui.label(title).style('font-size: 15px; font-weight: 600; line-height: 1.4;')
+            ui.label(description).style('font-size: 14px; line-height: 1.6; opacity: 0.85;')
+            if note:
+                ui.label(note).style('font-size: 13px; line-height: 1.5; opacity: 0.75;')
 
     with ui.dialog() as dialog:
-        with (
-            ui.card()
-            .style(
-                "max-width: 900px; padding: 32px; background: linear-gradient(to bottom, #ffffff 0%, #f8f9fa 100%);"
-            )
-            .classes("no-shadow help-dialog")
+        with ui.card().classes('help-dialog no-shadow').style(
+            'width: 900px; max-width: 94vw; max-height: 85vh; overflow-y: auto; '
+            'padding: 24px; background-color: var(--color-bg-surface); gap: 16px;'
         ):
-            with ui.row().classes("w-full items-center justify-between mb-6"):
-                ui.label("Help & Documentation").classes("text-h4 font-bold")
-                ui.button(icon="close", on_click=dialog.close).props(
-                    "flat round dense color=grey-7"
+            with ui.row().classes('w-full items-center justify-between'):
+                ui.label('Getting the most out of Speech2Text').style('font-size: 22px; font-weight: 500; line-height: 1.3;')
+                ui.button(icon='close', on_click=dialog.close).props(
+                    'flat round dense aria-label="Close help"', remove='color'
                 )
+            ui.label('Getting started').style(
+                'font-size: 12px; font-weight: 600; letter-spacing: 0.08em; '
+                'text-transform: uppercase; opacity: 0.65; margin-top: 8px;'
+            )
+            with ui.element('div').style(
+                'display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 14px; width: 100%;'
+            ):
+                for index, step in enumerate(steps, 1):
+                    title, icon, description, *note = step
+                    help_box(f'{index}. {title}', icon, description, note[0] if note else None)
 
-            with ui.column().classes("w-full gap-6"):
-                with ui.card().classes("bg-blue-50 border-l-4").style(
-                    "border-left-color: #082954; padding: 20px;"
-                ):
-                    ui.label(settings.ABOUT_TEXT).classes("text-h6 font-semibold mb-2")
-                    ui.label(
-                        "A powerful transcription service using Whisper AI models to convert audio and video files into searchable text or time-coded subtitles with high accuracy."
-                    ).classes("text-body1")
-
-                ui.label("Getting started").classes("text-h6 font-bold mt-2")
-
-                with ui.grid(columns=2).classes("w-full gap-4"):
-                    for step_num, step_title, step_desc, step_icon in [
-                        (
-                            "1",
-                            "Upload Files",
-                            "Click Upload or drag & drop up to 5 files (max 4GB each). Supports MP3, WAV, MP4, MKV, AVI, and more.",
-                            "upload_file",
-                        ),
-                        (
-                            "2",
-                            "Configure",
-                            'Click the "Transcribe" button, select language, number of speakers, and output format (transcript or subtitles).',
-                            "settings",
-                        ),
-                        (
-                            "3",
-                            "Monitor",
-                            "Track job status on the dashboard. Jobs process in the background.",
-                            "pending_actions",
-                        ),
-                        (
-                            "4",
-                            "Edit & Export",
-                            "Click completed jobs to refine in the editor. Press ? for keyboard shortcuts.",
-                            "edit_note",
-                        ),
-                    ]:
-                        with ui.card().classes("p-4"):
-                            with ui.row().classes("items-center gap-3 mb-2"):
-                                ui.icon(step_icon, size="md").classes("text-blue-700")
-                                ui.label(f"{step_num}. {step_title}").classes(
-                                    "text-subtitle1 font-semibold"
-                                )
-                            ui.label(step_desc).classes("text-body2 text-grey-8")
-
-                with ui.row().classes("w-full gap-4 items-stretch"):
-                    with ui.card().classes("flex-1 bg-amber-50 p-4"):
-                        with ui.row().classes("items-center gap-2 mb-2"):
-                            ui.icon("security", size="sm").classes("text-amber-800")
-                            ui.label("Privacy").classes("text-subtitle1 font-semibold")
-                        ui.label(
-                            "Files are encrypted, only accessible to you, and auto-deleted after the scheduled deletion date."
-                        ).classes("text-body2")
-
-                    with ui.card().classes("flex-1 bg-blue-50 p-4"):
-                        with ui.row().classes("items-center gap-2 mb-2"):
-                            ui.icon("help", size="sm").classes("text-blue-800")
-                            ui.label("Support").classes("text-subtitle1 font-semibold")
-
-                        ui.label(
-                            "Contact your institution's IT department for technical support or questions."
-                        ).classes("text-body2")
-
-                        support_contact = _get_support_contact_email()
-                        if support_contact:
-                            is_url = support_contact.startswith(("http://", "https://"))
-                            href = support_contact if is_url else f"mailto:{support_contact}"
-                            label = "Support:" if is_url else "Support email:"
-                            with ui.row().classes("items-center gap-1"):
-                                ui.label(label).classes("text-body2")
-                                ui.link(
-                                    support_contact, href
-                                ).classes("text-body2")
-
+            ui.separator().classes('my-1')
+            ui.label('Useful to know').style(
+                'font-size: 12px; font-weight: 600; letter-spacing: 0.08em; '
+                'text-transform: uppercase; opacity: 0.65;'
+            )
+            with ui.element('div').style(
+                'display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 14px; width: 100%;'
+            ):
+                help_box('User settings', 'person',
+                         'Set your default language here. Remember output type and advanced options in the upload window.')
+                help_box('Editor tools', 'keyboard',
+                         'Open Shortcuts for keyboard commands. When available, Word confidence helps you review uncertain words.')
+                help_box('Give feedback', 'rate_review',
+                         'Share ideas or report a problem using Give feedback in the side menu.')
+            with ui.element('div').style(
+                'display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 14px; width: 100%;'
+            ):
+                help_box('Privacy', 'security',
+                         'Stored files are encrypted and automatically deleted. See the scheduled deletion date in My files.', tint=True)
+                help_box('Support', 'help',
+                         "Contact your institution's IT department for technical support or questions.", tint=True)
         dialog.open()
 
 

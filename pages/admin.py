@@ -3034,6 +3034,8 @@ def analytics() -> None:
     ui.add_head_html("<style>body { background-color: var(--color-bg-surface); }</style>")
 
     ui.label("Activity overview").classes("text-3xl font-bold mb-4")
+    from utils.usage import render_statistics
+    render_statistics()
 
     stats = get_total_stats()
     wow = get_week_over_week()

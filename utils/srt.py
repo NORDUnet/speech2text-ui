@@ -124,6 +124,9 @@ class SRTEditor:
         """
         Toggle the live subtitle preview on the video. Persisted per user.
         """
+        if enabled and not self.subtitle_preview:
+            from utils.usage import record
+            record("preview.enabled")
         self.subtitle_preview = enabled
         app.storage.user["subtitle_preview"] = enabled
         self.refresh_subtitle_preview(force=True)
@@ -695,6 +698,9 @@ class SRTEditor:
             self.refresh_display(force_full_refresh=True)
             self.refresh_confidence_review()
             return
+        if replay:
+            from utils.usage import record
+            record("confidence.listen")
         target = targets[position]
         changed = {target["caption_index"], self._confidence_review_caption_index}
         self._confidence_review_id = target["word_id"]
@@ -766,6 +772,9 @@ class SRTEditor:
                     )
 
                     async def apply_threshold() -> None:
+                        from utils.usage import record
+                        if round(slider.value, 2) != self.confidence_threshold:
+                            record("confidence.adjusted")
                         self.confidence_threshold = round(slider.value, 2)
                         app.storage.user["confidence_threshold"] = (
                             self.confidence_threshold
@@ -2535,6 +2544,8 @@ class SRTEditor:
 
     def validate_captions(self):
         """Report timing/content errors separately from readability advice."""
+        from utils.usage import record
+        record("subtitles.checked")
         issues = check_subtitles(self.captions, CHARACTER_LIMIT)
         errors = [issue for issue in issues if issue["severity"] == "error"]
         warnings = [issue for issue in issues if issue["severity"] == "warning"]
@@ -3507,6 +3518,10 @@ class SRTEditor:
                                         filename="bulk_export.zip",
                                     )
 
+                                    from utils.usage import record
+                                    for _, exported_editor in bulk_editors:
+                                        kind = "subtitles" if exported_editor.data_format == "srt" else "transcript"
+                                        record(f"export.{kind}.{chosen_fmt}")
                                     ui.notify(
                                         f"Exported {len(bulk_editors)} files as {chosen_fmt.upper()}",
                                         type="positive",
@@ -3518,6 +3533,9 @@ class SRTEditor:
                                         filename=f"{Path(filename).stem}.{fmt.value}",
                                     )
 
+                                    from utils.usage import record
+                                    kind = "subtitles" if self.data_format == "srt" else "transcript"
+                                    record(f"export.{kind}.{fmt.value}")
                                     ui.notify(
                                         f"Exported as {fmt.value.upper()}",
                                         type="positive",

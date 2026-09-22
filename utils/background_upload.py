@@ -193,10 +193,18 @@ def register():
                 ui.separator()
                 language = ui.select(settings.WHISPER_LANGUAGES, label='Language',
                                      value=_default_transcription_language()).classes('w-full').props('outlined dense')
-                output_format = ui.radio(['Transcript', 'Subtitles'], value='Transcript').props('inline')
-                with ui.column().classes('gap-1 text-sm opacity-70'):
-                    ui.label('Transcript: Text organised by speaker, for reading and editing.')
-                    ui.label('Subtitles: Timed captions for displaying alongside your audio or video.')
+                with ui.row().classes('items-center gap-1'):
+                    output_format = ui.radio(['Transcript', 'Subtitles'], value='Transcript').props('inline')
+                    with ui.button(icon='info_outline').props(
+                        'flat round dense size=sm aria-label="About transcript and subtitles"', remove='color'
+                    ).classes('opacity-60') as format_help:
+                        format_tooltip = ui.tooltip(
+                            'Transcript: Text organised by speaker, for reading and editing.\n\n'
+                            'Subtitles: Timed captions for displaying alongside your audio or video.'
+                        ).style('max-width: min(300px, 85vw); white-space: pre-line;')
+                    format_help.on('click', lambda: format_tooltip.run_method('show'))
+                    format_help.on('focus', lambda: format_tooltip.run_method('show'))
+                    format_help.on('blur', lambda: format_tooltip.run_method('hide'))
                 with ui.expansion('More options', icon='tune').classes('w-full'):
                     speakers = ui.number('Number of speakers', value=0, min=0, step=1).classes('w-full').props('outlined dense')
                     ui.label('0 detects the number automatically.').classes('text-xs opacity-60')
@@ -227,6 +235,8 @@ def register():
                         if len(files) > 5 or any(not 0 <= int(f['size']) <= settings.MAX_UPLOAD_BYTES for f in files):
                             ui.notify(upload_limits, type='warning')
                             return
+                        from utils.usage import record
+                        record(f"upload.batch.{len(files)}")
                         batch.clear()
                         for metadata in files:
                             item = Upload(sanitize_filename(metadata['name']), int(metadata['size']), options=dict(options))
