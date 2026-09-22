@@ -96,7 +96,7 @@
 }
 .files-table .q-table__bottom .q-btn { color: var(--files-muted) !important; background: transparent !important; box-shadow: none; min-width: 28px; min-height: 28px; }
 .files-table .q-table__bottom .q-icon { font-size: 19px; }
-.files-table .deletion-warning { color: var(--files-danger); }
+.files-table .deletion-warning { color: var(--files-muted); font-weight: 400; }
 @media (max-width: 700px) {
     .files-table .q-table__top { padding: 16px; gap: 12px; }
     .files-table .files-actions { gap: 6px; flex-wrap: wrap; }

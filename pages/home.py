@@ -82,7 +82,7 @@ def create() -> None:
         # Don't show Quasar's "No data available" bottom layer — an empty list is
         # the expected state before a user uploads anything.
         table.props("hide-no-data flat separator=horizontal")
-        ui.add_head_html('<link rel="stylesheet" href="/static/files-table.css?v=2">')
+        ui.add_head_html('<link rel="stylesheet" href="/static/files-table.css?v=3">')
 
         # Custom header checkbox that selects/deselects ALL rows across all pages
         table.add_slot(
