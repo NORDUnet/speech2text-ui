@@ -23,6 +23,7 @@ import re
 from collections import defaultdict
 from datetime import datetime
 from nicegui import app, ui
+from utils.provisioning_input import parse_claim_input
 from utils.common import add_timezone_to_timestamp, default_styles, page_init
 from db.analytics import (
     get_page_views,
@@ -1540,7 +1541,7 @@ def create_rule_dialog(page: callable) -> None:
         user_data = get_user_data() or {}
         admin_domains = user_data.get("admin_domains") or ""
         allowed_realms = [
-            d.strip() for d in admin_domains.split(",") if d.strip() and "." in d.strip()
+            d.strip() for d in (admin_domains + "," + (user_data.get("realm") or "")).split(",") if d.strip()
         ]
 
     with ui.dialog() as dialog:
@@ -1692,9 +1693,9 @@ def edit_rule_dialog(rule: dict, page: callable) -> None:
 
     if not is_bofh:
         user_data = get_user_data() or {}
-        admin_domains = user_data.get("admin_domains", "")
+        admin_domains = user_data.get("admin_domains") or ""
         allowed_realms = [
-            d.strip() for d in admin_domains.split(",") if d.strip() and "." in d.strip()
+            d.strip() for d in (admin_domains + "," + (user_data.get("realm") or "")).split(",") if d.strip()
         ]
 
     with ui.dialog() as dialog:
@@ -1943,270 +1944,135 @@ def _do_add_attribute(name: str, description: str, example: str) -> None:
         ui.notify("Failed to add attribute. It may already exist.", color="negative")
 
 
-def _evaluate_condition(condition: str, actual_value: str, expected_value: str) -> bool:
-    """
-    Evaluate a rule condition against an actual attribute value.
-    For list-type attributes (comma-separated), check if any item matches.
-    """
-
-    values = [v.strip() for v in actual_value.split(",")]
-
-    for val in values:
-        if condition == "equals" and val == expected_value:
-            return True
-        if condition == "not_equals" and val != expected_value:
-            return True
-        if condition == "contains" and expected_value in val:
-            return True
-        if condition == "not_contains" and expected_value not in val:
-            return True
-        if condition == "starts_with" and val.startswith(expected_value):
-            return True
-        if condition == "ends_with" and val.endswith(expected_value):
-            return True
-        if condition == "regex_match":
-            try:
-                if re.search(expected_value, val):
-                    return True
-            except re.error:
-                return False
-
-    return False
+async def _provisioning_request(path: str, payload: dict) -> dict | None:
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.post(
+                settings.API_URL + "/api/v1/admin/rules/" + path,
+                headers=get_auth_header(), json=payload,
+            )
+        response.raise_for_status()
+        return response.json()
+    except httpx.HTTPError:
+        ui.notify("Provisioning test failed. Check your permissions and try again.", color="negative")
+        return None
 
 
 def test_rules_dialog(selected_rules: list[dict]) -> None:
-    """
-    Show a dialog where the user enters a value and tests it against the rule.
-    The rule already defines which attribute and condition to use.
-    For list-type values (e.g. affiliations), enter items separated by commas.
-    """
-
+    """Test the condition only, including disabled rules, using backend matching."""
     rule = selected_rules[0]
-    attr_name = rule.get("attribute_name", "")
-    condition = rule.get("attribute_condition", "")
-    expected = rule.get("attribute_value", "")
-    cond_label = CONDITION_OPTIONS.get(condition, condition)
-
-    with ui.dialog() as dialog, ui.card().style("min-width: 600px; max-width: 800px;"):
+    condition = rule.get("attribute_condition", "").lower()
+    with ui.dialog() as dialog, ui.card().style("width: 650px; max-width: 90vw;"):
         ui.label("Test rule").classes("text-xl font-bold")
-        ui.label(f"{rule.get('name', '')}").classes("text-grey-7")
-        ui.label(
-            f"{attr_name} {cond_label} \"{expected}\""
-        ).classes("text-grey-7 text-sm")
+        ui.label(rule["name"])
+        ui.label(f'{rule["attribute_name"]} {CONDITION_OPTIONS.get(condition, condition)} "{rule["attribute_value"]}"').classes("text-grey-7")
+        ui.label("Tests the attribute condition only. Use Simulate provisioning for account changes.").classes("text-sm text-grey-7")
+        value = ui.input(label=f'Value for {rule["attribute_name"]}').classes("w-full")
+        value.tooltip('Enter text, or a JSON list such as ["staff", "member"]. Commas in plain text stay literal.')
+        output = ui.column().classes("w-full")
 
-        ui.separator()
+        async def run_test():
+            output.clear()
+            try:
+                actual = parse_claim_input(value.value or "")
+            except ValueError as error:
+                ui.notify(str(error), color="negative")
+                return
+            button.disable()
+            try:
+                result = await _provisioning_request(f'{rule["id"]}/match', {"value": actual})
+                if result is not None:
+                    with output:
+                        ui.label("Match" if result["matched"] else "No match")
+            finally:
+                button.enable()
 
-        test_input = ui.input(
-            label=f"Value for {attr_name}",
-            placeholder="For lists, separate with commas",
-        ).classes("w-full").on("keydown.enter", lambda: run_test())
-
-        result_container = ui.column().classes("w-full mt-2")
-
-        def run_test() -> None:
-            result_container.clear()
-            actual = test_input.value or ""
-
-            matched = _evaluate_condition(condition, actual, expected)
-
-            with result_container:
-                if matched:
-                    with ui.row().classes("items-center gap-2"):
-                        ui.icon("check_circle", color="positive").classes("text-lg")
-                        ui.label("Match!").classes("text-positive font-bold")
-                else:
-                    with ui.row().classes("items-center gap-2"):
-                        ui.icon("cancel", color="negative").classes("text-lg")
-                        ui.label("No match.").classes("text-negative")
-
-        with ui.row().classes("w-full justify-end mt-4 gap-2"):
-            ui.button("Test", icon="science", on_click=run_test).props("color=primary")
+        with ui.row().classes("w-full justify-end"):
+            button = ui.button("Test", on_click=run_test)
             ui.button("Close", on_click=dialog.close).props("flat", remove="color")
-
     dialog.open()
 
 
 def test_all_rules_dialog() -> None:
-    """
-    Show a dialog where the user enters attribute name/value pairs and
-    simulates provisioning against all enabled rules.
-    """
-
-    rules_data = rules_get()
-    all_rules = rules_data.get("result", []) if rules_data else []
-    enabled_rules = [r for r in all_rules if r.get("enabled")]
-
-    onboarding_attrs = attributes_get()
-    attr_names = [a["name"] for a in onboarding_attrs] if onboarding_attrs else []
-
-    all_groups = groups_get()
-    group_names: dict[int, str] = {}
-    if all_groups:
-        group_names = {g["id"]: g["name"] for g in all_groups}
-
-    with ui.dialog() as dialog, ui.card().style("min-width: 600px; max-width: 800px;").classes("simulate-dialog"):
+    """Read-only simulation using the same evaluator as real logins."""
+    attrs = attributes_get() or []
+    names = sorted(set([a["name"] for a in attrs] + ["email", "preferred_username", "domain", "realm"]))
+    user = get_user_data() or {}
+    with ui.dialog() as dialog, ui.card().style("width: 700px; max-width: 90vw;").classes("simulate-dialog"):
         ui.label("Simulate provisioning").classes("text-xl font-bold")
-        ui.label(
-            "Enter attribute values to simulate what would happen when a user logs in."
-        ).classes("text-grey-7")
-
+        ui.label("Preview rule effects on a hypothetical account. No accounts are changed.").classes("text-sm text-grey-7")
+        realm = ui.input("Account realm", value=user.get("realm", "")).classes("w-full")
+        username = ui.input("Login username (optional)").classes("w-full")
+        username.tooltip("Used to derive the domain attribute, just as at login.")
+        with ui.expansion("Existing account settings", icon="tune").classes("w-full"):
+            override = ui.select({"none": "No manual override", "activated": "Manually activated", "deactivated": "Manually deactivated"}, value="none", label="Manual override").classes("w-full")
+            has_group = ui.checkbox("Already belongs to a group", value=False)
         ui.separator()
+        rows = []
+        container = ui.column().classes("w-full")
 
-        attr_rows: list[dict] = []
-        attrs_container = ui.column().classes("w-full gap-2")
-
-        def add_attr_row(name: str | None = None, value: str = "") -> None:
+        def add_row():
             row = {}
-            with attrs_container:
-                with ui.row().classes("w-full items-center gap-2") as row_el:
-                    row["element"] = row_el
-                    row["name"] = ui.select(
-                        attr_names,
-                        label="Attribute",
-                        value=name,
-                        with_input=True,
-                        new_value_mode="add",
-                    ).classes("w-1/3")
-                    row["value"] = ui.input(
-                        label="Value",
-                        value=value,
-                        placeholder="For lists, separate with commas",
-                    ).classes("flex-grow").on("keydown.enter", lambda: run_test())
-                    ui.button(
-                        icon="close",
-                        on_click=lambda r=row: remove_attr_row(r),
-                    ).props("flat round dense color=grey-6 size=sm")
-            attr_rows.append(row)
+            with container:
+                with ui.row().classes("w-full items-center") as element:
+                    row["element"] = element
+                    row["name"] = ui.select(names, label="Attribute", with_input=True, new_value_mode="add").classes("w-1/3")
+                    row["value"] = ui.input("Value").classes("flex-grow")
+                    row["value"].tooltip('Enter text, or a JSON list such as ["staff", "member"].')
+                    ui.button(icon="close", on_click=lambda: remove_row(row)).props("flat round dense", remove="color")
+            rows.append(row)
 
-        def remove_attr_row(row: dict) -> None:
-            if len(attr_rows) <= 1:
+        def remove_row(row):
+            if len(rows) > 1:
+                container.remove(row["element"])
+                rows.remove(row)
+
+        add_row()
+        ui.button("Add attribute", icon="add", on_click=add_row).props("flat dense", remove="color")
+        output = ui.column().classes("w-full")
+
+        async def run_test():
+            output.clear()
+            try:
+                attributes = {}
+                for row in rows:
+                    name = row["name"].value
+                    if name:
+                        if name in attributes:
+                            raise ValueError("Use one row per attribute; use a JSON list for multiple values.")
+                        attributes[name] = parse_claim_input(row["value"].value or "")
+                if not (realm.value or "").strip():
+                    raise ValueError("Enter the account realm.")
+            except ValueError as error:
+                ui.notify(str(error), color="negative")
                 return
-            attrs_container.remove(row["element"])
-            attr_rows.remove(row)
+            button.disable()
+            try:
+                result = await _provisioning_request("simulate", {
+                    "realm": realm.value.strip(), "username": username.value or "",
+                    "attributes": attributes, "override": override.value,
+                    "has_group": has_group.value,
+                })
+                if result is None:
+                    return
+                with output:
+                    ui.label("Simulated result").classes("font-medium")
+                    for message in result["summary"]:
+                        ui.label(message)
+                    ui.separator()
+                    for rule in result["rules"]:
+                        with ui.row().classes("items-center gap-2"):
+                            ui.icon("check_circle" if rule["matched"] else "remove_circle_outline")
+                            ui.label(rule["name"]).classes("font-medium")
+                            ui.label(rule["reason"]).classes("text-grey-7 text-sm")
+                    if not result["rules"]:
+                        ui.label("No enabled rules apply to this realm.").classes("text-grey-7")
+            finally:
+                button.enable()
 
-        add_attr_row()
-
-        ui.button(
-            "Add attribute", icon="add", on_click=lambda: add_attr_row()
-        ).props("flat dense color=primary").classes("add-attr-btn")
-
-        result_container = ui.column().classes("w-full mt-2")
-
-        def run_test() -> None:
-            result_container.clear()
-
-            user_attrs = {}
-            for row in attr_rows:
-                name = row["name"].value
-                value = row["value"].value
-                if name and value:
-                    user_attrs[name] = value
-
-            if not user_attrs:
-                with result_container:
-                    ui.label("Enter at least one attribute and value.").classes(
-                        "text-negative"
-                    )
-                return
-
-            matched_rules = []
-            unmatched_rules = []
-
-            for rule in enabled_rules:
-                attr_name = rule.get("attribute_name", "")
-                condition = rule.get("attribute_condition", "")
-                expected = rule.get("attribute_value", "")
-
-                actual = user_attrs.get(attr_name)
-                if actual is not None and _evaluate_condition(
-                    condition, actual, expected
-                ):
-                    matched_rules.append(rule)
-                else:
-                    unmatched_rules.append(rule)
-
-            with result_container:
-                for rule in matched_rules:
-                    cond_label = CONDITION_OPTIONS.get(
-                        rule.get("attribute_condition", ""),
-                        rule.get("attribute_condition", ""),
-                    )
-                    actions = []
-                    if rule.get("activate"):
-                        actions.append("Activate")
-                    if rule.get("deny"):
-                        actions.append("Deactivate")
-                    if rule.get("assign_to_group"):
-                        actions.append("Assign to group")
-                    with ui.row().classes("items-center gap-2"):
-                        ui.icon("check_circle", color="positive").classes("text-lg")
-                        ui.label(f"{rule.get('name', '')}").classes(
-                            "text-positive font-bold"
-                        )
-                        ui.label(
-                            f'{rule.get("attribute_name")} {cond_label} '
-                            f'"{rule.get("attribute_value")}"'
-                        ).classes("text-grey-7 text-sm")
-                    if actions:
-                        ui.label(
-                            f"Actions: {', '.join(actions)}"
-                        ).classes("text-body2 text-grey-8 ml-8")
-
-                for rule in unmatched_rules:
-                    cond_label = CONDITION_OPTIONS.get(
-                        rule.get("attribute_condition", ""),
-                        rule.get("attribute_condition", ""),
-                    )
-                    with ui.row().classes("items-center gap-2"):
-                        ui.icon("cancel", color="negative").classes("text-lg")
-                        ui.label(f"{rule.get('name', '')}").classes("text-negative")
-                        ui.label(
-                            f'{rule.get("attribute_name")} {cond_label} '
-                            f'"{rule.get("attribute_value")}"'
-                        ).classes("text-grey-7 text-sm")
-
-                if not matched_rules and not unmatched_rules:
-                    ui.label("No enabled rules to test.").classes("text-grey-7")
-
-                # Final provisioning result summary
-                ui.separator().classes("my-2")
-                ui.label("Simulated result").classes("font-bold")
-                if not matched_rules:
-                    ui.label("None").classes("text-grey-7")
-                else:
-                    will_activate = any(r.get("activate") for r in matched_rules)
-                    will_deny = any(r.get("deny") for r in matched_rules)
-                    # Last matching rule with a group wins
-                    final_group = None
-                    for r in matched_rules:
-                        grp = r.get("assign_to_group")
-                        if grp:
-                            try:
-                                final_group = int(grp)
-                            except (ValueError, TypeError):
-                                pass
-
-                    results = []
-                    if will_deny:
-                        results.append("User deactivated")
-                    elif will_activate:
-                        results.append("User activated")
-                    if final_group and final_group in group_names:
-                        results.append(
-                            f"User assigned to group: {group_names[final_group]}"
-                        )
-                    if results:
-                        for r in results:
-                            ui.label(r)
-                    else:
-                        ui.label("None").classes("text-grey-7")
-
-        with ui.row().classes("w-full justify-end mt-4 gap-2"):
-            ui.button("Simulate", icon="science", on_click=run_test).classes(
-                "button-default-style"
-            ).props(remove="color")
+        with ui.row().classes("w-full justify-end"):
+            button = ui.button("Simulate", on_click=run_test)
             ui.button("Close", on_click=dialog.close).props("flat", remove="color")
-
     dialog.open()
 
 
@@ -2274,7 +2140,7 @@ def _show_rules_help() -> None:
                     for line in [
                         "Deactivate always wins over Activate.",
                         "For group assignment, the last matching rule wins. "
-                        "A user can only belong to one group.",
+                        "Existing group membership is kept.",
                     ]:
                         ui.label(f"• {line}").classes("text-body2 text-grey-8")
 
@@ -2285,7 +2151,8 @@ def _show_rules_help() -> None:
                     "rules that would activate that user will not automatically "
                     "override that decision. "
                     "The user will remain deactivated until an administrator "
-                    "reactivates the account."
+                    "reactivates the account. Manual activation also prevents rules from "
+                    "deactivating the user or assigning a group."
                 ).classes("text-body2 text-grey-8")
 
             with ui.column().classes("gap-1"):
@@ -2295,7 +2162,7 @@ def _show_rules_help() -> None:
                     "match the rule. Enter the value you want to test against the "
                     "rule's attribute and condition. "
                     "For list-type attributes (for example affiliations), enter "
-                    "multiple values separated by commas."
+                    'a JSON list such as ["staff", "member"]. Plain text is tested literally.'
                 ).classes("text-body2 text-grey-8")
 
         with ui.row().classes("w-full justify-end mt-4"):
@@ -2348,7 +2215,7 @@ def rules_page() -> None:
     ui.label(
         "Rules are evaluated on every login. "
         "Deactivate overrides Activate. "
-        "The last matching rule determines the user's group."
+        "For users without a group or manual override, the last matching group rule wins."
     ).classes("text-body2")
 
     rules_data = rules_get()
@@ -2371,7 +2238,7 @@ def rules_page() -> None:
             rule["actions_summary"] = ", ".join(actions) if actions else "None"
             rule["enabled_label"] = "Yes" if rule.get("enabled") else "No"
             cond = rule.get("attribute_condition", "")
-            rule["condition_label"] = CONDITION_OPTIONS.get(cond, cond)
+            rule["condition_label"] = CONDITION_OPTIONS.get(cond.lower(), cond)
 
         rules_table = ui.table(
             columns=[
@@ -2447,6 +2314,7 @@ def rules_page() -> None:
             r"""
             <q-td :props="props">
                 <q-toggle
+                    :disable="props.row.can_manage === false"
                     :model-value="props.row.enabled"
                     @update:model-value="val => $parent.$emit('toggle_enabled', {id: props.row.id, enabled: val})"
                     color="positive"
@@ -2476,12 +2344,14 @@ def rules_page() -> None:
             r"""
             <q-td :props="props">
                 <a
+                    v-if="props.row.can_manage !== false"
                     class="cursor-pointer text-primary"
                     @click="$parent.$emit('edit_rule', props.row)"
                     style="text-decoration: underline;"
                 >
                     {{ props.row.name }}
                 </a>
+                <span v-else>{{ props.row.name }} <q-tooltip>Only administrators managing every realm can change this rule. Global rules require BOFH.</q-tooltip></span>
             </q-td>
             """,
         )
@@ -2500,7 +2370,7 @@ def rules_page() -> None:
                 >
                     <q-tooltip>Test rule</q-tooltip>
                 </q-btn>
-                <q-btn flat dense round icon="delete" color="negative" size="sm"
+                <q-btn v-if="props.row.can_manage !== false" flat dense round icon="delete" color="negative" size="sm"
                     @click="$parent.$emit('delete_rule', props.row)"
                 >
                     <q-tooltip>Delete rule</q-tooltip>

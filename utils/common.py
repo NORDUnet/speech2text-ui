@@ -547,12 +547,12 @@ def show_help_dialog() -> None:
 
     steps = [
         ('Upload & configure', 'upload',
-         f'Choose up to 5 files, max {max_size:g} {size_unit} each. Select language and output type, then click Upload & transcribe.'),
+         f'Choose up to 5 files, max {max_size:g} {size_unit} each. Select language and output type, then click Upload.'),
         ('Monitor in My files', 'folder',
          'Follow upload progress and job status. Transcription starts automatically after upload.',
          'Keep this tab open until transfer finishes. You can browse other pages within it.'),
         ('Review & edit', 'edit',
-         'Click Edit on a completed file. Correct the text, preview subtitles and check their timing and readability.'),
+         'Click Edit on a completed file. Correct the text and preview subtitles on the video.'),
         ('Save & export', 'download',
          'Save your changes, then choose Export to download your transcript or subtitles.'),
     ]
@@ -603,7 +603,7 @@ def show_help_dialog() -> None:
                 help_box('User settings', 'person',
                          'Set your default language here. Remember output type and advanced options in the upload window.')
                 help_box('Editor tools', 'keyboard',
-                         'Open Shortcuts for keyboard commands. When available, Word confidence helps you review uncertain words.')
+                         'Open Shortcuts for keyboard commands. When available, Review words lets you adjust the confidence threshold and review uncertain words.')
                 help_box('Give feedback', 'rate_review',
                          'Share ideas or report a problem using Give feedback in the side menu.')
             with ui.element('div').style(
@@ -826,7 +826,7 @@ def show_feedback_dialog() -> None:
     dialog.open()
 
 
-def page_init(header_text: Optional[str] = "", use_drawer: bool = False) -> None:
+def page_init(header_text: Optional[str] = "", use_drawer: bool = False) -> ui.dark_mode | None:
     """
     Initialize the page with a header and background color.
     """
@@ -863,7 +863,8 @@ def page_init(header_text: Optional[str] = "", use_drawer: bool = False) -> None
 
     # Dark mode: None = auto (follow system), True = dark, False = light.
     # Stored per session in app.storage.user and applied live (no page reload).
-    dark = ui.dark_mode(app.storage.user.get("dark_mode", None))
+    app.storage.user.setdefault("dark_mode", None)
+    dark = ui.dark_mode(app.storage.user["dark_mode"]).bind_value(app.storage.user, "dark_mode")
 
     # The "Prune" outline button is forced to color=black (.text-black). In dark
     # mode that black is set by an adopted/layered Quasar rule that outranks any
@@ -1118,6 +1119,7 @@ def page_init(header_text: Optional[str] = "", use_drawer: bool = False) -> None
                     icon=_dark_icon(app.storage.user.get("dark_mode", None)),
                 ).props("flat", remove="color") as dark_btn:
                     ui.tooltip("Light / dark / auto")
+                dark_btn.bind_icon_from(dark, "value", backward=_dark_icon)
                 dark_btn.on("click", lambda: cycle_dark(dark_btn))
                 with ui.button(
                     icon="help",
@@ -1186,6 +1188,7 @@ def page_init(header_text: Optional[str] = "", use_drawer: bool = False) -> None
                     icon=_dark_icon(app.storage.user.get("dark_mode", None)),
                 ).props("flat", remove="color") as dark_btn:
                     ui.tooltip("Light / dark / auto")
+                dark_btn.bind_icon_from(dark, "value", backward=_dark_icon)
                 dark_btn.on("click", lambda: cycle_dark(dark_btn))
                 with ui.button(
                     icon="help",
@@ -1200,6 +1203,7 @@ def page_init(header_text: Optional[str] = "", use_drawer: bool = False) -> None
                 ui.add_head_html("<style>body {background-color: var(--color-bg-surface);}</style>")
 
     _show_announcement_banners()
+    return dark
 
 
 def add_timezone_to_timestamp(timestamp: str) -> str:
@@ -1364,7 +1368,7 @@ def _default_transcription_language() -> str:
     return settings.WHISPER_LANGUAGES[0]
 
 
-def table_delete(table: ui.table) -> None:
+def table_delete(table: ui.table, *, on_deleted=None) -> None:
     """
     Handle the click event on the Delete button.
     """
@@ -1382,19 +1386,20 @@ def table_delete(table: ui.table) -> None:
                 ui.button("Cancel", on_click=lambda: dialog.close()).props("color=black")
                 ui.button(
                     "Delete",
-                    on_click=lambda: __delete_files(table, dialog),
+                    on_click=lambda: __delete_files(table, dialog, on_deleted=on_deleted),
                 ).props("color=red")
 
         dialog.open()
 
 
-async def __delete_files(table: ui.table, dialog: ui.dialog) -> None:
+async def __delete_files(table: ui.table, dialog: ui.dialog, *, on_deleted=None) -> None:
     selected = list(table.selected)
     total = len(selected)
     dialog.close()
 
     deleted = 0
     failed = 0
+    deleted_ids = set()
 
     for row in selected:
         uuid = row["uuid"]
@@ -1402,6 +1407,9 @@ async def __delete_files(table: ui.table, dialog: ui.dialog) -> None:
             from utils.background_upload import owner_queue
             uploads = owner_queue()
             uploads[:] = [u for u in uploads if not (u.id == uuid and u.phase == "Failed")]
+            deleted_ids.add(uuid)
+            if on_deleted is not None:
+                on_deleted(uuid)
             deleted += 1
             continue
         try:
@@ -1414,12 +1422,17 @@ async def __delete_files(table: ui.table, dialog: ui.dialog) -> None:
             from utils.background_upload import owner_queue
             uploads = owner_queue()
             uploads[:] = [u for u in uploads if u.backend_id != uuid]
+            deleted_ids.add(uuid)
+            if on_deleted is not None:
+                on_deleted(uuid)
             deleted += 1
         except (httpx.HTTPStatusError, httpx.RequestError):
             failed += 1
 
     table.selected = []
-    table.update_rows(await jobs_get(), clear_selection=True)
+    # Keep successful deletions removed without replacing the page cache with
+    # a separate API snapshot. Failed deletions remain visible.
+    table.update_rows([r for r in table.rows if r["uuid"] not in deleted_ids], clear_selection=True)
 
     if failed == 0:
         ui.notify(

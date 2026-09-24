@@ -235,7 +235,7 @@ def register():
                 language.on_value_change(lambda _: update_verbatim())
                 update_verbatim()
                 remember = ui.checkbox('Remember output type and advanced options', value=False).classes('text-sm')
-                remember.tooltip('Remembers output type, speaker count and verbatim. Default language is managed in User settings.')
+                remember.tooltip('Remembers output type and verbatim. Speaker count resets to automatic for each upload. Default language is managed in User settings.')
 
                 async def begin_upload():
                     nonlocal starting
@@ -261,7 +261,7 @@ def register():
                             batch.append(item)
                             uploads.append(item)
                         if remember.value:
-                            user_storage['upload_defaults'] = {key: options[key] for key in ('output_format', 'speakers', 'verbatim')}
+                            user_storage['upload_defaults'] = {key: options[key] for key in ('output_format', 'verbatim')}
                         overlay.set_visibility(False)
                         await ui.run_javascript(f'window.scribeUploading = true; getElement({uploader.id}).$refs.qRef.upload();')
                     except ValueError as error:
@@ -278,7 +278,7 @@ def register():
                 uploader.on('failed', failed)
                 with ui.row().classes('w-full justify-end gap-2'):
                     ui.button('Cancel', on_click=lambda: overlay.set_visibility(False)).props('flat no-caps', remove='color')
-                    start_button = ui.button('Upload & transcribe', on_click=begin_upload).props('unelevated no-caps')
+                    start_button = ui.button('Upload', on_click=begin_upload).props('unelevated no-caps')
         overlay.set_visibility(False)
 
         def open_upload():
@@ -290,7 +290,7 @@ def register():
             # Ignore language saved by earlier upload dialogs; User settings owns it.
             language.value = _default_transcription_language()
             output_format.value = defaults.get('output_format', 'Transcript')
-            speakers.value = defaults.get('speakers', 0)
+            speakers.value = 0  # Speaker count is specific to this upload, never a saved default.
             verbatim.value = defaults.get('verbatim', False)
             remember.value = False
             update_verbatim()

@@ -174,7 +174,7 @@ def create() -> None:
                 with ui.button("Delete", icon="delete") as delete:
                     delete.props("flat no-caps", remove="color")
                     delete.classes("file-toolbar-button")
-                    delete.on("click", lambda: table_delete(table))
+                    delete.on("click", lambda: table_delete(table, on_deleted=forget_deleted))
                     delete.set_enabled(False)
                     delete_tooltip = ui.tooltip("Select one or more files to delete")
 
@@ -185,13 +185,23 @@ def create() -> None:
                     bulk_export.set_enabled(False)
                     export_tooltip = ui.tooltip("Select one or more files to export")
 
-                with ui.button("Upload & transcribe", icon="upload") as upload:
+                with ui.button("Upload", icon="upload") as upload:
                     upload.props("flat no-caps", remove="color")
                     upload.classes("file-toolbar-button file-upload-button")
                     upload.on("click", lambda: table_upload(table))
 
         backend_rows = []
         last_fetch = None
+        deleted_ids = set()
+
+        def forget_deleted(uuid):
+            nonlocal backend_rows
+            deleted_ids.add(uuid)
+            backend_rows = [r for r in backend_rows if r["uuid"] != uuid]
+            table.selected = [r for r in table.selected if r["uuid"] != uuid]
+            table.update_rows([r for r in table.rows if r["uuid"] != uuid], clear_selection=False)
+            toggle_buttons(table.selected)
+
 
         async def update_rows(force=True):
             """
@@ -208,8 +218,8 @@ def create() -> None:
                 fetched = await jobs_get(include_uploads=False)
                 last_fetch = monotonic()
                 if fetched is not None:
-                    backend_rows = fetched
-            rows = merge_rows(backend_rows, uploads)
+                    backend_rows = [r for r in fetched if r["uuid"] not in deleted_ids]
+            rows = [r for r in merge_rows(backend_rows, uploads) if r["uuid"] not in deleted_ids]
 
             # Replacing identical rows rebuilds hovered tooltips every tick.
             # Keep browser elements intact until displayed data changes.

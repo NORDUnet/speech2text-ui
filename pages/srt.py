@@ -79,65 +79,9 @@ def create() -> None:
         ui.add_head_html(
             f"<link rel='preload' as='video' href='/video/{uuid}' type='video/mp4'>"
         )
-        ui.add_head_html(
-            """
-        <script>
-        window.addEventListener('keydown', function(e) {
-            // Block Cmd + z / Ctrl + z for undo
-            if ((e.metaKey || e.ctrlKey) && ! e.shiftKey && e.key.toLowerCase() === 'z') {
-                e.preventDefault();
-            }
-
-            // Block Cmd + y / Ctrl + y for redo
-            if ((e.metaKey || e.ctrlKey) && ! e.shiftKey && e.key.toLowerCase() === 's') {
-                e.preventDefault();
-            }
-
-            // Block Cmd + Shift + z / Ctrl + Shift + z for redo
-            if ((e.metaKey || e.ctrlKey) && ! e.shiftKey && e.key.toLowerCase() === 'y') {
-                e.preventDefault();
-            }
-
-            // Block Cmd + Shift + z / Ctrl + Shift + z for redo
-            if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'z') {
-                e.preventDefault();
-            }
-
-            // Block Ctrl + f / Cmd + f for find
-            if ((e.metaKey || e.ctrlKey) && ! e.shiftKey && e.key.toLowerCase() === 'f') {
-                e.preventDefault();
-            }
-
-            // Block Ctrl + d / Cmd + d for bookmark
-            if ((e.metaKey || e.ctrlKey) && ! e.shiftKey && e.key.toLowerCase() === 'd') {
-                e.preventDefault();
-            }
-
-            // Block Ctrl + e / Cmd + e for search
-            if ((e.metaKey || e.ctrlKey) && ! e.shiftKey && e.key.toLowerCase() === 'e') {
-                e.preventDefault();
-            }
-
-            // Block Ctrl + Shift + m / Cmd + Shift + m for mute tab
-            if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'm') {
-                e.preventDefault();
-            }
-
-            // Handle Escape key globally (even when video player has focus)
-            if (e.key === 'Escape' && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey) {
-                // Blur active element
-                if (document.activeElement && typeof document.activeElement.blur === 'function') {
-                    document.activeElement.blur();
-                }
-                // Dispatch custom event that Python can listen to
-                window.dispatchEvent(new CustomEvent('escape-pressed'));
-            }
-        }, true);
-        </script>
-        """
-        )
         ui.add_head_html(default_styles)
-        ui.keyboard(on_key=editor.handle_key_event, ignore=[])
+        ui.add_head_html('<script src="/static/editor-shortcuts.js?v=2" defer></script>')
+        ui.on('editor-shortcut', editor.handle_shortcut)
 
         # Resolve auth and password in the page's own context so the fetch
         # helper is safe to run from a worker thread.
@@ -371,14 +315,6 @@ def create() -> None:
                     "click", lambda: editor.show_export_dialog(filename)
                 )
 
-                if data_format == "srt":
-                    with ui.button("Check subtitles", icon="check").props("flat", remove="color") as validate_button:
-                        ui.tooltip("Check timing errors and readability recommendations.")
-                        validate_button.on(
-                            "click",
-                            lambda: editor.validate_captions(),
-                        )
-                editor.create_search_panel()
                 editor.show_keyboard_shortcuts()
             with ui.button("Close editor", icon="close").props("flat", remove="color") as close_button:
                 close_button.on("click", lambda: editor.close_editor("/home"))
@@ -471,7 +407,23 @@ def create() -> None:
                                 ),
                             )
 
-                            editor.create_confidence_panel()
+                            with ui.tabs().props("dense no-caps inline-label").classes("text-inherit") as editor_tools:
+                                if editor.words:
+                                    ui.tab("review", label="Review words", icon="spellcheck")
+                                if data_format == "txt":
+                                    ui.tab("speakers", label="Speakers", icon="people_outline")
+                                ui.tab("search", label="Find & replace", icon="search")
+                            editor.tool_tabs = editor_tools
+
+                            def switch_editor_tool(event):
+                                if event.value != "review" and editor._confidence_review_id is not None:
+                                    editor.end_confidence_review()
+                                if event.value != "search":
+                                    editor.clear_search()
+                                elif editor._search_input is not None and editor._search_input.value:
+                                    editor.search_captions(editor._search_input.value)
+
+                            editor_tools.on_value_change(switch_editor_tool)
 
                         # Apply a persisted preview preference. The push must
                         # wait for the websocket connection — a fixed delay
@@ -484,19 +436,21 @@ def create() -> None:
                                 editor.refresh_subtitle_preview(force=True)
 
                             ui.timer(0.1, apply_initial_preview, once=True)
-                        editor.create_confidence_workspace()
-
-                if data_format == "txt":
-                    with splitter.after:
-                        with ui.card().classes("w-full h-full"):
-                            with ui.column().classes("p-4 w-full"):
-                                ui.label("Speakers").classes("text-h6").style(
-                                    "align-self: center;"
-                                )
-                                editor.render_speakers()
-                                with ui.button("Prune", on_click=editor.prune_speakers).props("outline color=black").classes("text-black prune-btn"):
-                                    ui.tooltip(
-                                        "Remove speakers that are not assigned "
-                                        "to any caption."
-                                    )
-                    
+                        with ui.tab_panels(
+                            editor_tools,
+                            value="review" if editor.words else ("speakers" if data_format == "txt" else "search"),
+                            animated=False,
+                            keep_alive=True,
+                        ).classes("w-full bg-transparent"):
+                            if editor.words:
+                                with ui.tab_panel("review").classes("p-0"):
+                                    editor.create_confidence_workspace()
+                            if data_format == "txt":
+                                with ui.tab_panel("speakers").classes("p-0"):
+                                    with ui.column().classes("w-full confidence-workspace"):
+                                        ui.label("Speakers").classes("text-sm font-semibold")
+                                        editor.render_speakers()
+                                        with ui.button("Remove unused speakers", icon="person_remove", on_click=editor.prune_speakers).props("flat no-caps", remove="color"):
+                                            ui.tooltip("Remove speakers that are not assigned to any caption.")
+                            with ui.tab_panel("search").classes("p-0"):
+                                editor.create_search_panel()

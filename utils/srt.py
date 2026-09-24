@@ -32,7 +32,6 @@ from utils.settings import get_settings
 from utils.undo_redo import UndoRedoManager
 from utils.word_timing import match_word_indices
 from utils.confidence_review import review_targets, review_index
-from utils.subtitle_checks import check_subtitles
 
 CHARACTER_LIMIT_EXCEEDED_COLOR = "text-amber-600"
 CHARACTER_LIMIT = 42
@@ -66,6 +65,7 @@ class SRTEditor:
         self.case_sensitive = False
         self.exact_match = False
         self.search_container = None
+        self.tool_tabs = None
         self._search_input = None
         self.__video_player = None
         self.words_per_minute_element = None
@@ -111,7 +111,6 @@ class SRTEditor:
         self._has_unsaved_changes = False
         self._save_confirmation_dialog = None
         self._pending_action_after_save: Optional[Callable] = None
-        self._play_pause = False
 
     def has_unsaved_changes(self) -> bool:
         """
@@ -386,7 +385,7 @@ class SRTEditor:
             else:
                 data = json.dumps(self.export_json())
 
-            jsondata = {"format": self.srt_format, "data": data}
+            jsondata = {"format": "srt" if self.srt_format == "srt" else "json", "data": data}
             headers = get_auth_header()
             headers["Content-Type"] = "application/json"
             res = httpx.put(
@@ -421,96 +420,40 @@ class SRTEditor:
             f"window.__followPlayback = {'true' if autoscroll else 'false'};"
         )
 
-    def handle_key_event(self, event: events.KeyEventArguments) -> None:
-        # Only handle keydown events, not keyup to prevent double-firing
-        if not event.action.keydown:
-            return
-
-        match event.key:
-            # Next block of captions, Alt+Down
-            case "ArrowDown" if event.modifiers.alt and not event.modifiers.shift and not event.modifiers.ctrl and not event.modifiers.meta:
-                self.select_next_caption()
-
-            # Prev block of captions, Alt+Up
-            case "ArrowUp" if event.modifiers.alt and not event.modifiers.shift and not event.modifiers.ctrl and not event.modifiers.meta:
-                self.select_prev_caption()
-
-            # Split block, Ctrl/⌘+Enter
-            case "Enter" if event.modifiers.ctrl and not event.modifiers.shift and not event.modifiers.alt and not event.modifiers.meta:
-                self.split_caption(self.selected_caption)
-            case "Enter" if event.modifiers.meta and not event.modifiers.shift and not event.modifiers.alt and not event.modifiers.ctrl:
-                self.split_caption(self.selected_caption)
-
-            # Merge block with next, Ctrl+M
-            case "m" if event.modifiers.ctrl:
-                self.merge_with_next(self.selected_caption)
-
-            # Merge block with previous, Ctrl+Shift+M
-            case "M" if event.modifiers.ctrl:
-                self.merge_with_previous(self.selected_caption)
-
-            # Add caption after, Shift+Ctrl+Enter
-            case "Enter" if self.data_format == "txt" and event.modifiers.ctrl and event.modifiers.shift:
-                self.add_caption_after(self.selected_caption)
-            case "Enter" if self.data_format == "txt" and event.modifiers.meta and event.modifiers.shift:
-                self.add_caption_after(self.selected_caption)
-
-            # Delete block, Ctrl+D
-            case "d" if event.modifiers.ctrl:
-                self.remove_caption(self.selected_caption)
-
-            # Validate captions, Ctrl+Shift+V
-            case "V" if event.modifiers.ctrl and event.modifiers.shift:
-                self.validate_captions()
-
-            # Play/pause video, Ctrl+Space
-            case " " if event.modifiers.ctrl and not event.modifiers.shift and not event.modifiers.alt and not event.modifiers.meta:
-                if self.__video_player:
-                    if self._play_pause:
-                        self.__video_player.pause()
-                        self._play_pause = False
-                    else:
-                        self.__video_player.play()
-                        self._play_pause = True
-
-            # Undo, Ctrl+Z
-            case "z" if event.modifiers.ctrl and not event.modifiers.shift:
-                self.undo()
-            case "z" if event.modifiers.meta and not event.modifiers.shift:
-                self.undo()
-
-            # Redo, Ctrl+Y
-            case "y" if event.modifiers.ctrl and not event.modifiers.shift:
-                self.redo()
-            case "z" if event.modifiers.meta and event.modifiers.shift:
-                self.redo()
-            case "y" if event.modifiers.meta and not event.modifiers.shift:
-                self.redo()
-
-            # Close block, Escape
-            case "Escape":
-                # Click the "Close" button to save changes before closing
-                # This behaves the same as clicking the Close button
-                ui.run_javascript("document.querySelector('.caption-close')?.click()")
-
-            # Open find, Ctrl+F
-            case "f" if event.modifiers.ctrl and not event.modifiers.shift:
-                self.open_search_panel()
-            case "f" if event.modifiers.meta and not event.modifiers.shift:
-                self.open_search_panel()
-
-            # Save file, Ctrl+S / Cmd+S
-            case "s" if event.modifiers.ctrl or event.modifiers.meta:
-                self.save_srt_changes()
-
-            # Export file, Ctrl+E / Cmd+E
-            case "e" if event.modifiers.ctrl and not event.modifiers.shift:
-                self.show_export_dialog(self.filename)
-            case "e" if event.modifiers.meta and not event.modifiers.shift:
-                self.show_export_dialog(self.filename)
-            # Everything else
-            case _:
-                pass
+    def handle_shortcut(self, event: events.GenericEventArguments) -> None:
+        """Dispatch only browser-validated shortcuts, using the latest card text."""
+        data = event.args
+        action = data.get("action")
+        caption = self.selected_caption
+        if caption and data.get("caption_index") == caption.index and isinstance(data.get("text"), str):
+            self.update_caption_text(caption, data["text"])
+        if action == "next":
+            self.select_next_caption()
+        elif action == "previous":
+            self.select_prev_caption()
+        elif action == "split" and caption and self.words:
+            if data.get("caption_index") == caption.index:
+                self.split_at_cursor(caption, data.get("text", caption.text), data.get("cursor"))
+        elif action == "merge_next" and caption:
+            self.merge_with_next(caption)
+        elif action == "merge_previous" and caption:
+            self.merge_with_previous(caption)
+        elif action == "add" and caption and self.data_format == "txt":
+            self.add_caption_after(caption)
+        elif action == "delete" and caption:
+            self.remove_caption(caption)
+        elif action == "undo":
+            self.undo()
+        elif action == "redo":
+            self.redo()
+        elif action == "close":
+            ui.run_javascript("document.querySelector('.caption-close')?.click()")
+        elif action == "find":
+            self.open_search_panel()
+        elif action == "save":
+            self.save_srt_changes()
+        elif action == "export":
+            self.show_export_dialog(self.filename)
 
     def select_next_caption(self) -> None:
         """
@@ -737,62 +680,33 @@ class SRTEditor:
         if previous is not None:
             self.refresh_display(specific_indices={previous})
 
-    def create_confidence_panel(self) -> None:
-        """
-        Toolbar control for the word-confidence flagging threshold.
-        Renders nothing when the job has no word-level data.
-        """
+    def create_confidence_threshold(self) -> None:
+        """Compact threshold control inside the review workspace."""
+        with ui.row().classes("w-full items-center gap-3"):
+            ui.label("Confidence below").classes("text-xs opacity-70")
+            slider = ui.slider(min=0.0, max=1.0, step=0.05, value=self.confidence_threshold).classes("flex-1").style("min-width: 100px; max-width: 220px;").props('aria-label="Word confidence threshold"')
+            threshold_label = ui.label(f"{self.confidence_threshold:.0%}").classes("text-xs font-medium").style("min-width: 3ch;")
+            with ui.icon("info_outline").classes("opacity-60 text-sm"):
+                ui.tooltip("Review words with confidence below this percentage. Raise it to include more words; lower it to focus on less certain words. 0% flags none.").style("max-width: 300px; white-space: normal;")
 
-        if not self.words:
-            return
+        async def apply_threshold() -> None:
+            from utils.usage import record
+            value = round(slider.value, 2)
+            if value == self.confidence_threshold:
+                return
+            record("confidence.adjusted")
+            self.confidence_threshold = value
+            app.storage.user["confidence_threshold"] = value
+            threshold_label.set_text(f"{value:.0%}")
+            self._confidence_review_id = None
+            self._confidence_review_status.set_text("")
+            ui.run_javascript("window.__stopConfidenceReplay?.()")
+            self.refresh_display(force_full_refresh=True)
+            self.refresh_confidence_review()
+            await self.navigate_confidence()
 
-        with ui.button("Word confidence", icon="signal_cellular_alt").props(
-            "flat no-caps icon-right=expand_more", remove="color"
-        ):
-            ui.tooltip(
-                "Highlight words the transcription model is less confident about. "
-                "Adjust the threshold to show more or fewer words."
-            ).style("max-width: 300px; white-space: normal;")
-            with ui.menu():
-                with ui.column().classes("p-3").style("min-width: 240px;"):
-                    threshold_label = ui.label().classes("text-sm")
-
-                    def update_label() -> None:
-                        threshold_label.set_text(
-                            f"Flag words below {self.confidence_threshold:.0%} confidence"
-                        )
-
-                    update_label()
-
-                    slider = ui.slider(
-                        min=0.0,
-                        max=1.0,
-                        step=0.05,
-                        value=self.confidence_threshold,
-                    )
-
-                    async def apply_threshold() -> None:
-                        from utils.usage import record
-                        if round(slider.value, 2) != self.confidence_threshold:
-                            record("confidence.adjusted")
-                        self.confidence_threshold = round(slider.value, 2)
-                        app.storage.user["confidence_threshold"] = (
-                            self.confidence_threshold
-                        )
-                        update_label()
-                        self._confidence_review_id = None
-                        self._confidence_review_status.set_text("")
-                        ui.run_javascript("window.__stopConfidenceReplay?.()")
-                        self.refresh_display(force_full_refresh=True)
-                        self.refresh_confidence_review()
-                        await self.navigate_confidence()
-
-                    # 'change' fires on release, not on every drag step.
-                    slider.on("change", lambda e: apply_threshold())
-
-                    ui.label("Raise the threshold to flag more words; 0% flags none.").classes(
-                        "text-xs text-gray-500"
-                    )
+        # Apply on release, rather than rebuilding the review list while dragging.
+        slider.on("change", lambda e: apply_threshold())
 
     async def mark_confidence_reviewed(self):
         targets = self.confidence_review_targets()
@@ -829,6 +743,7 @@ class SRTEditor:
                     ui.tooltip("Review each occurrence, replay its audio, then mark it reviewed. "
                                "Progress is remembered for you on this transcription; text and confidence scores are unchanged.").style(
                                    "max-width: 300px; white-space: normal;")
+            self.create_confidence_threshold()
             self._confidence_review_status = ui.label("").classes("text-sm font-medium confidence-current")
             with ui.row().classes("items-center gap-2 flex-wrap confidence-actions"):
                 ui.button(icon="chevron_left", on_click=lambda: self.navigate_confidence(-1)).props('flat round dense aria-label="Previous word"', remove="color").tooltip("Previous word")
@@ -837,7 +752,7 @@ class SRTEditor:
                 self._confidence_mark_button = ui.button("Reviewed", icon="done", on_click=self.mark_confidence_reviewed).props("flat no-caps", remove="color").style(
                     "background: color-mix(in srgb, currentColor 7%, transparent); border-radius: 8px;"
                 ).tooltip("Mark this word reviewed and move to the next.")
-                ui.button(icon="stop", on_click=self.end_confidence_review).props('flat round dense aria-label="Stop review"', remove="color").tooltip("Stop playback and clear the selected word")
+                ui.button(icon="stop", on_click=self.end_confidence_review).props('flat round dense aria-label="Stop review"', remove="color").tooltip("Pause the video and remove the current word’s review highlight. The word stays in the review list and is not marked as reviewed.")
             self._confidence_review_list = ui.column().classes("w-full confidence-queue")
             self.refresh_confidence_review()
             # Opening the editor must not scroll or seek. Review navigation
@@ -1639,7 +1554,7 @@ class SRTEditor:
         return self.split_at_word(caption, index, text)
 
     def create_split_cursor_button(self, caption: SRTCaption, text_area) -> None:
-        button = ui.button("Split at cursor", icon="call_split").props("flat dense")
+        button = ui.button("Split at cursor", icon="call_split").props("flat dense").classes("caption-split-cursor")
         # Keep textarea focus/caret on pointer clicks; keyboard activation
         # can still read the textarea's retained selectionStart.
         button.on("mousedown", js_handler="e => e.preventDefault()")
@@ -1663,62 +1578,6 @@ class SRTEditor:
         )
         with button:
             ui.tooltip("Place the cursor in the text. The word to its right starts the next caption.")
-
-    def split_caption(self, caption: SRTCaption) -> None:
-        """
-        Split a caption into two parts.
-        """
-
-        if not caption:
-            return
-
-        # Save state before making changes
-        self.save_state_for_undo()
-
-        text_lines = caption.text.split("\n")
-
-        if len(text_lines) == 1:
-            # Split single line in half
-            text = caption.text
-            mid_point = len(text) // 2
-            # Find nearest space to split at
-            while mid_point > 0 and text[mid_point] != " ":
-                mid_point -= 1
-            if mid_point == 0:
-                mid_point = len(text) // 2
-
-            first_part = text[:mid_point].strip()
-            second_part = text[mid_point:].strip()
-        else:
-            # Split at middle line
-            mid_line = len(text_lines) // 2
-            first_part = "\n".join(text_lines[:mid_line])
-            second_part = "\n".join(text_lines[mid_line:])
-
-        # Calculate time split
-        start_seconds = caption.get_start_seconds()
-        end_seconds = caption.get_end_seconds()
-        mid_seconds = (start_seconds + end_seconds) / 2
-
-        # Update first caption
-        caption.text = first_part
-        caption.end_time = self.seconds_to_timestamp(mid_seconds)
-
-        # Create second caption
-        new_caption = SRTCaption(
-            caption.index + 1,
-            self.seconds_to_timestamp(mid_seconds),
-            self.seconds_to_timestamp(end_seconds),
-            second_part,
-        )
-
-        # Insert new caption
-        caption_index = self.captions.index(caption)
-        self.captions.insert(caption_index + 1, new_caption)
-
-        self.renumber_captions()
-        self.update_words_per_minute()
-        self.refresh_display(force_full_refresh=True)
 
     def add_caption_after(self, caption: SRTCaption) -> None:
         """
@@ -1876,7 +1735,7 @@ class SRTEditor:
     def clear_search(self) -> None:
         """
         Clear the search state and remove all match highlighting from the
-        captions. Called when the search dialog closes.
+        captions. Called when leaving the search tool or clearing the search.
         """
         if not self.search_term and not self.search_results:
             return
@@ -1895,161 +1754,144 @@ class SRTEditor:
 
     def open_search_panel(self) -> None:
         """
-        Open the existing search dialog (creating it first if needed) and
-        focus the search input so typing can start immediately. Reuses one
-        dialog, so repeated Ctrl+F cannot stack panels.
+        Select the shared search tool and focus its existing input.
         """
 
-        if self.search_container is None:
-            self.create_search_panel()
+        if self.tool_tabs is None or self._search_input is None:
+            return
+        self.tool_tabs.set_value("search")
 
-        self.search_container.open()
-
-        if self._search_input is not None:
-            # Focus via QInput's own methods once the dialog's open
-            # animation has finished; select the previous term so typing
-            # replaces it.
-            def focus_input() -> None:
+        def focus_input() -> None:
+            if self.tool_tabs.value == "search":
                 self._search_input.run_method("focus")
                 self._search_input.run_method("select")
 
-            ui.timer(0.3, focus_input, once=True)
+        ui.timer(0.1, focus_input, once=True)
 
-    def create_search_panel(self, open_window: Optional[bool] = False) -> None:
+    def create_search_panel(self) -> None:
         """
         Create the search panel UI.
         """
 
-        with ui.dialog() as self.search_container:
-            # Closing the dialog (button, Esc or click outside) ends the
-            # search: remove the match highlighting from the captions.
-            self.search_container.on("hide", lambda: self.clear_search())
-            with ui.card().classes("w-1/2 max-w-full").style("padding: 16px;"):
-                # Title
-                ui.label("Find & Replace").classes("text-h6 mb-3")
+        with ui.column().classes("w-full confidence-workspace") as self.search_container:
+            ui.label("Find & replace").classes("text-sm font-semibold")
 
-                # FIND SECTION
-                with ui.column().classes("w-full gap-2"):
-                    ui.label("Find").classes("text-caption text-gray-600")
+            # FIND SECTION
+            with ui.column().classes("w-full gap-2"):
+                ui.label("Find").classes("text-caption text-gray-600")
 
-                    with ui.row().classes("w-full items-center gap-2"):
-                        search_input = (
-                            ui.input(
-                                placeholder="Search in captions…",
-                                value=self.search_term,
-                            )
-                            .classes("flex-1")
-                            .props("outlined dense clearable")
-                        )
-                        self._search_input = search_input
-
-                        ui.button(icon="search").props("flat dense round", remove="color").on(
-                            "click", lambda: self.search_captions(search_input.value)
-                        ).tooltip(
-                            "Find"
-                        )
-
-                    # Toggling an option re-runs the search and hands focus
-                    # back to the search box, so Enter keeps navigating
-                    # results instead of re-toggling the checkbox.
-                    def on_option_toggle() -> None:
-                        if self.search_term:
-                            self.search_captions(search_input.value)
-                        search_input.run_method("focus")
-
-                    with ui.row().classes("w-full items-center justify-between mt-1"):
-                        with ui.row().classes("items-center gap-4"):
-                            ui.checkbox("Case sensitive").bind_value_to(
-                                self, "case_sensitive"
-                            ).on(
-                                "update:model-value",
-                                lambda: on_option_toggle(),
-                            )
-
-                            with ui.checkbox("Exact word").bind_value_to(
-                                self, "exact_match"
-                            ).on(
-                                "update:model-value",
-                                lambda: on_option_toggle(),
-                            ):
-                                ui.tooltip(
-                                    'Match whole words only — "prøve" will not match "prøver".'
-                                )
-
-                        # Navigation + info
-                        with ui.row().classes("items-center gap-1"):
-                            ui.button(icon="keyboard_arrow_up").props("flat dense round", remove="color").on(
-                                "click", lambda: self.navigate_search_results(-1)
-                            ).tooltip(
-                                "Previous match"
-                            )
-                            ui.button(icon="keyboard_arrow_down").props("flat dense round", remove="color").on(
-                                "click", lambda: self.navigate_search_results(1)
-                            ).tooltip(
-                                "Next match"
-                            )
-
-                            self.search_info_label = ui.label("").classes(
-                                "text-caption text-gray-600"
-                            )
-
-                ui.separator().classes("my-3")
-
-                # REPLACE SECTION
-                with ui.column().classes("w-full gap-2"):
-                    ui.label("Replace").classes("text-caption text-gray-600")
-
-                    replace_input = (
+                with ui.row().classes("w-full items-center gap-2"):
+                    search_input = (
                         ui.input(
-                            placeholder="Replace with…",
+                            placeholder="Search in captions…",
+                            value=self.search_term,
                         )
-                        .classes("w-full")
+                        .classes("flex-1")
                         .props("outlined dense clearable")
                     )
+                    self._search_input = search_input
 
-                    with ui.row().classes("w-full justify-end gap-2"):
-                        ui.button("Replace").props("flat dense", remove="color").on(
-                            "click",
-                            lambda: self.replace_in_current_caption(
-                                replace_input.value
-                            ),
-                        )
-
-                        ui.button("Replace all").props("flat dense", remove="color").on(
-                            "click", lambda: self.replace_all(replace_input.value)
-                        )
-
-                ui.separator().classes("my-3")
-
-                with ui.row().classes("w-full justify-end"):
-                    ui.button("Close").props("flat dense", remove="color").on(
-                        "click", self.search_container.close
+                    ui.button(icon="search").props("flat dense round", remove="color").on(
+                        "click", lambda: self.search_captions(search_input.value or "")
+                    ).tooltip(
+                        "Find"
                     )
 
-                # Enter runs the search; further Enters on the same term
-                # jump to the next match (Shift+Enter to the previous).
-                def on_search_enter(shift: bool = False) -> None:
-                    term = search_input.value or ""
-                    if term == self.search_term and self.search_results:
-                        self.navigate_search_results(-1 if shift else 1)
-                    else:
-                        self.search_captions(term)
+                # Toggling an option re-runs the search and hands focus
+                # back to the search box, so Enter keeps navigating
+                # results instead of re-toggling the checkbox.
+                def on_option_toggle() -> None:
+                    if self.search_term:
+                        self.search_captions(search_input.value or "")
+                    search_input.run_method("focus")
 
-                search_input.on(
-                    "keydown.enter.exact",
-                    lambda: on_search_enter(),
-                )
-                search_input.on(
-                    "keydown.shift.enter",
-                    lambda: on_search_enter(shift=True),
+                with ui.row().classes("w-full items-center justify-between mt-1"):
+                    with ui.row().classes("items-center gap-4"):
+                        ui.checkbox("Case sensitive").bind_value_to(
+                            self, "case_sensitive"
+                        ).on(
+                            "update:model-value",
+                            lambda: on_option_toggle(),
+                        )
+
+                        with ui.checkbox("Exact word").bind_value_to(
+                            self, "exact_match"
+                        ).on(
+                            "update:model-value",
+                            lambda: on_option_toggle(),
+                        ):
+                            ui.tooltip(
+                                'Match whole words only — "prøve" will not match "prøver".'
+                            )
+
+                    # Navigation + info
+                    with ui.row().classes("items-center gap-1"):
+                        ui.button(icon="keyboard_arrow_up").props("flat dense round", remove="color").on(
+                            "click", lambda: self.navigate_search_results(-1)
+                        ).tooltip(
+                            "Previous match"
+                        )
+                        ui.button(icon="keyboard_arrow_down").props("flat dense round", remove="color").on(
+                            "click", lambda: self.navigate_search_results(1)
+                        ).tooltip(
+                            "Next match"
+                        )
+
+                        self.search_info_label = ui.label("").classes(
+                            "text-caption text-gray-600"
+                        )
+
+            ui.separator().classes("my-3")
+
+            # REPLACE SECTION
+            with ui.column().classes("w-full gap-2"):
+                ui.label("Replace").classes("text-caption text-gray-600")
+
+                replace_input = (
+                    ui.input(
+                        placeholder="Replace with…",
+                    )
+                    .classes("w-full")
+                    .props("outlined dense clearable")
                 )
 
-        if open_window:
-            self.open_search_panel()
-        else:
-            ui.button("Search").props("icon=search flat dense", remove="color").on(
-                "click", lambda: self.open_search_panel()
-            ).classes("button-open-search")
+                with ui.row().classes("w-full justify-end gap-2"):
+                    ui.button("Replace").props("flat dense", remove="color").on(
+                        "click",
+                        lambda: self.replace_in_current_caption(
+                            replace_input.value
+                        ),
+                    )
+
+                    ui.button("Replace all").props("flat dense", remove="color").on(
+                        "click", lambda: self.replace_all(replace_input.value)
+                    )
+
+            ui.separator().classes("my-3")
+
+            with ui.row().classes("w-full justify-end"):
+                ui.button("Clear search").props("flat dense", remove="color").on(
+                    "click", lambda: (self.clear_search(), search_input.set_value(""))
+                )
+
+            # Enter runs the search; further Enters on the same term
+            # jump to the next match (Shift+Enter to the previous).
+            def on_search_enter(shift: bool = False) -> None:
+                term = search_input.value or ""
+                if term == self.search_term and self.search_results:
+                    self.navigate_search_results(-1 if shift else 1)
+                else:
+                    self.search_captions(term)
+
+            search_input.on(
+                "keydown.enter.exact",
+                lambda: on_search_enter(),
+            )
+            search_input.on(
+                "keydown.shift.enter",
+                lambda: on_search_enter(shift=True),
+            )
+
 
     def merge_with_next(self, caption: SRTCaption) -> None:
         """
@@ -2175,7 +2017,7 @@ class SRTEditor:
 
                     text_area = (
                         ui.textarea(value=caption.text)
-                        .classes("w-full caption-text-input")
+                        .classes("w-full caption-text-input").props(f'data-caption-index="{caption.index}"')
                         .props("outlined input-class=h-32")
                     )
                     text_area.on(
@@ -2220,7 +2062,7 @@ class SRTEditor:
                         ).classes("caption-close").tooltip('Finish editing this card. Use Save to save your changes to the transcription.')
 
                         if self.data_format == "txt":
-                            ui.button("Add caption").props("flat dense").on(
+                            ui.button("Add caption").props("flat dense").classes("caption-add").on(
                                 "click", lambda: self.add_caption_after(caption)
                             ).tooltip('Insert a new caption immediately after this one, then edit its text and timing.')
 
@@ -2430,7 +2272,7 @@ class SRTEditor:
 
                 text_area = (
                     ui.textarea(value=caption.text)
-                    .classes("w-full caption-text-input")
+                    .classes("w-full caption-text-input").props(f'data-caption-index="{caption.index}"')
                     .props("outlined input-class=h-32")
                 )
                 text_area.on(
@@ -2469,7 +2311,7 @@ class SRTEditor:
                     ).classes("caption-close").tooltip('Finish editing this card. Use Save to save your changes to the transcription.')
 
                     if self.data_format == "txt":
-                        ui.button("Add caption").props("flat dense").on(
+                        ui.button("Add caption").props("flat dense").classes("caption-add").on(
                             "click", lambda: self.add_caption_after(caption)
                         ).tooltip('Insert a new caption immediately after this one, then edit its text and timing.')
 
@@ -2542,83 +2384,6 @@ class SRTEditor:
                 ),
             )
 
-    def validate_captions(self):
-        """Report timing/content errors separately from readability advice."""
-        from utils.usage import record
-        record("subtitles.checked")
-        issues = check_subtitles(self.captions, CHARACTER_LIMIT)
-        errors = [issue for issue in issues if issue["severity"] == "error"]
-        warnings = [issue for issue in issues if issue["severity"] == "warning"]
-        invalid = {index for issue in errors for index in issue["indices"]}
-        changed = set()
-        for caption in self.captions:
-            valid = caption.index not in invalid
-            if caption.is_valid != valid:
-                changed.add(caption.index)
-            caption.is_valid = valid
-        if changed:
-            self.refresh_display(specific_indices=changed)
-
-        with ui.dialog() as dialog, ui.card().classes("p-6").style(
-            "max-width: 700px; width: 90vw; max-height: 90vh; overflow-y: auto;"
-        ):
-            with ui.row().classes("items-center gap-2"):
-                ui.label("Check subtitles").classes("text-h5 font-bold")
-                with ui.icon("info_outline", size="20px").classes("opacity-60 cursor-help").props(
-                    'tabindex=0 aria-label="About subtitle checks"'
-                ):
-                    ui.tooltip(
-                        "Checks subtitle timing and readability. Warnings suggest improvements; "
-                        "they do not necessarily prevent playback or export."
-                    ).style("max-width: min(320px, calc(100vw - 32px)); white-space: normal; overflow-wrap: break-word;")
-            ui.label(f"{len(self.captions)} captions checked · {len(errors)} errors · {len(warnings)} warnings")
-            for title, entries, icon, color in (
-                ("Timing and content errors", errors, "error", "text-red-500"),
-                ("Readability warnings", warnings, "warning", "text-amber-600"),
-            ):
-                if not entries:
-                    continue
-                ui.separator()
-                ui.label(title).classes("text-lg font-semibold")
-                for issue in entries:
-                    def jump(index):
-                        container = self.caption_containers.get(index)
-                        if container is None:
-                            ui.notify("Caption no longer available. Run the check again.", type="warning")
-                            return
-                        dialog.close()
-                        ui.run_javascript(
-                            f"requestAnimationFrame(() => document.getElementById('c{container.id}')"
-                            "?.scrollIntoView({behavior: 'smooth', block: 'center'}));"
-                        )
-                    with ui.row().classes("items-start flex-nowrap w-full gap-2 rounded-lg p-2").style(
-                        "border: 1px solid color-mix(in srgb, currentColor 12%, transparent);"
-                    ):
-                        ui.icon(icon, size="20px").classes(f"{color} mt-3 shrink-0")
-                        with ui.column().classes("gap-1 flex-1 min-w-0"):
-                            ui.button(
-                                issue["message"],
-                                on_click=lambda index=issue["indices"][0]: jump(index),
-                            ).props("flat no-caps align=left icon-right=chevron_right", remove="color").classes(
-                                "text-left w-full rounded-md"
-                            ).style("color: inherit; font-weight: 400; line-height: 1.5;")
-                            if len(issue["indices"]) > 1:
-                                with ui.row().classes("gap-1"):
-                                    for index in issue["indices"]:
-                                        ui.button(
-                                            f"Go to #{index}",
-                                            on_click=lambda index=index: jump(index),
-                                        ).props("flat dense no-caps", remove="color").classes(
-                                            "rounded-md px-2"
-                                        ).style("color: inherit; font-size: 0.8rem; opacity: 0.8;")
-            if not errors:
-                ui.label("No timing or content errors found.").classes("text-sm opacity-70")
-            if not warnings:
-                ui.label("No readability warnings found.").classes("text-sm opacity-70")
-            with ui.row().classes("w-full justify-end"):
-                ui.button("Close", on_click=dialog.close).props("flat")
-        dialog.open()
-
     def show_keyboard_shortcuts(self, open_window: Optional[bool] = False) -> None:
         """
         Show keyboard shortcuts dialog.
@@ -2636,7 +2401,7 @@ class SRTEditor:
             (
                 "Editing",
                 [
-                    ("Split caption", "Ctrl/⌘ + Enter"),
+                    *([("Split at cursor", "Ctrl/⌘ + Enter")] if self.words else []),
                     ("Merge with next", "Ctrl + M"),
                     ("Merge with previous", "Ctrl + Shift + M"),
                     *([("Add caption after", "Ctrl/⌘ + Shift + Enter")] if self.data_format == "txt" else []),
@@ -2649,14 +2414,20 @@ class SRTEditor:
                     ("Save file", "Ctrl/⌘ + S"),
                     ("Export file", "Ctrl/⌘ + E"),
                     ("Find", "Ctrl/⌘ + F"),
-                    ("Validate captions", "Ctrl + Shift + V"),
+                ],
+            ),
+            (
+                "Inside the search field",
+                [
+                    ("Search / next match", "Enter"),
+                    ("Previous match", "Shift + Enter"),
                 ],
             ),
             (
                 "History",
                 [
                     ("Undo", "Ctrl/⌘ + Z"),
-                    ("Redo", "Ctrl + Y / ⌘ + Shift + Z"),
+                    ("Redo", "Ctrl/⌘ + Y or Ctrl/⌘ + Shift + Z"),
                 ],
             ),
             (
@@ -2670,6 +2441,7 @@ class SRTEditor:
         with ui.dialog() as dialog:
             with ui.card().classes("w-2/3 max-w-2xl").style("padding: 24px; max-height: 90vh; overflow-y: auto;"):
                 ui.label("Keyboard shortcuts").classes("text-h5 mb-4 font-bold")
+                ui.label("Editing actions need an open card. Undo and redo inside text fields use the browser’s text history. Shortcuts are paused while a dialog is open.").classes("text-sm opacity-70 mb-3")
 
                 with ui.column().classes("w-full gap-4"):
                     for group_name, shortcuts in shortcut_groups:
