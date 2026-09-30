@@ -1014,6 +1014,7 @@ def page_init(header_text: Optional[str] = "", use_drawer: bool = False) -> None
         admin_items = [
             ("/admin/users", "people", "Users"),
             ("/admin", "group_work", "Groups"),
+            ("/admin/quotas", "speed", "Shared quotas"),
             ("/admin/rules", "rule", "User provisioning"),
             ("/admin/customers", "business", "Customers" if is_bofh else "Account"),
             ("/admin/feedback", "reviews", "Feedback"),
@@ -1867,18 +1868,16 @@ def table_bulk_transcribe(table: ui.table, on_complete=None) -> None:
 
                 with ui.button(
                     "Start transcribing",
-                    on_click=lambda: (
-                        start_transcription(
-                            uploadable,
-                            f"{language.value} (verbatim)"
-                            if verbatim.value
-                            else language.value,
-                            speakers.value,
-                            output_format.value,
-                            dialog,
-                            table,
-                            on_complete=on_complete,
-                        ),
+                    on_click=lambda: start_transcription(
+                        uploadable,
+                        f"{language.value} (verbatim)"
+                        if verbatim.value
+                        else language.value,
+                        speakers.value,
+                        output_format.value,
+                        dialog,
+                        table,
+                        on_complete=on_complete,
                     ),
                 ) as start:
                     start.props("flat", remove="color")
@@ -2040,7 +2039,7 @@ def table_bulk_export(table: ui.table) -> None:
     ui.timer(0.1, fetch_and_show, once=True)
 
 
-def start_transcription(
+async def start_transcription(
     rows: list,
     language: str,
     speakers: str,
@@ -2063,24 +2062,31 @@ def start_transcription(
         uuid = row["uuid"]
 
         try:
-            response = httpx.put(
-                f"{settings.API_URL}/api/v1/transcriber/{uuid}",
-                json={
-                    "language": f"{selected_language}",
-                    "speakers": int(speakers),
-                    "output_format": output_format,
-                    "encryption_password": storage_decrypt(
-                        app.storage.user.get("encryption_password"),
-                    ),
-                },
-                headers=get_auth_header(),
-            )
+            async with httpx.AsyncClient(timeout=300) as client:
+                response = await client.put(
+                    f"{settings.API_URL}/api/v1/transcriber/{uuid}",
+                    json={
+                        "language": f"{selected_language}",
+                        "speakers": int(speakers),
+                        "output_format": output_format,
+                        "encryption_password": storage_decrypt(
+                            app.storage.user.get("encryption_password"),
+                        ),
+                    },
+                    headers=get_auth_header(),
+                )
             response.raise_for_status()
-        except httpx.HTTPError:
-            if response.status_code == 403:
-                error = response.json()["result"]["error"]
-            else:
-                error = "Error: Failed to start transcription."
+        except httpx.HTTPStatusError as exc:
+            error = "Error: Failed to start transcription."
+            try:
+                data = exc.response.json()
+                detail = data.get("detail", data.get("result", {}).get("error", error))
+                error = detail.get("message", error) if isinstance(detail, dict) else str(detail)
+            except ValueError:
+                pass
+            break
+        except httpx.RequestError:
+            error = "Unable to reach the service. Refresh job status before trying again."
             break
 
     if error:
