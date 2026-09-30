@@ -135,7 +135,7 @@ def create() -> None:
             editor.load_words(data["result"])
         fetch_seconds = perf_counter() - fetch_started
 
-        ui.add_head_html('<script src="/static/confidence-review.js?v=2" defer></script>')
+        ui.add_head_html('<script src="/static/confidence-review.js?v=4" defer></script>')
 
         # Click-to-seek on caption words: capture phase so a word click
         # seeks the video without also selecting the caption card.
@@ -319,34 +319,12 @@ def create() -> None:
             with ui.button("Close editor", icon="close").props("flat", remove="color") as close_button:
                 close_button.on("click", lambda: editor.close_editor("/home"))
 
-        ui.add_head_html('<link rel="stylesheet" href="/static/caption-cards.css?v=3">')
-        card_style = app.storage.user.get("caption_card_style", "minimal")
-        if card_style not in ("minimal", "classic"):
-            card_style = "minimal"
-
-        def set_card_style(event):
-            style = event.value
-            if style not in ("minimal", "classic"):
-                return
-            app.storage.user["caption_card_style"] = style
-            # Change appearance without rebuilding cards or resetting playback.
-            caption_panel.classes(
-                add="caption-style-minimal" if style == "minimal" else "",
-                remove="caption-style-minimal" if style == "classic" else "",
-            )
-
+        ui.add_head_html('<link rel="stylesheet" href="/static/caption-cards.css?v=4">')
         with ui.splitter(value=60).classes("w-full h-full") as splitter:
             with splitter.before:
                 with ui.card().classes(
-                    "w-full h-full caption-panel" + (" caption-style-minimal" if card_style == "minimal" else "")
-                ) as caption_panel:
-                    with ui.row().classes("w-full items-center justify-end gap-2"):
-                        ui.toggle(
-                            {"minimal": "Minimal", "classic": "Classic"},
-                            value=card_style, on_change=set_card_style,
-                        ).props("no-caps dense unelevated toggle-color=grey-8").classes("caption-style-toggle").tooltip(
-                            "Classic restores the previous card appearance. Your choice is remembered."
-                        )
+                    "w-full h-full caption-panel caption-style-minimal"
+                ):
                     with ui.scroll_area().style("height: calc(90vh - 140px);"):
                         editor.main_container = ui.column().classes("w-full h-full").props("id=subtitle-editor-captions")
 

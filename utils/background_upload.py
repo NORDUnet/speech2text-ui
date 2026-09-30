@@ -1,14 +1,12 @@
 """Persistent browser upload host; content pages navigate in a same-origin frame."""
 import asyncio
+from contextlib import aclosing
 import logging
 from time import perf_counter
 import json
-import os
 import secrets
-import tempfile
 from urllib.parse import urlsplit
 
-import aiofiles
 import httpx
 from nicegui import app, ui
 from utils.settings import get_settings
@@ -91,26 +89,33 @@ async def submit_upload(upload, headers, user_storage=None):
     await finalize_failure(upload, current_headers)
 
 
-async def forward_file(upload, path, headers, user_storage=None):
+async def forward_file(upload, file: ui.upload.FileUpload, headers, user_storage=None):
+    # Keep the NiceGUI object, not just its path: it owns its temporary file.
+    # NiceGUI 3.7.1 deletes that file when the object is garbage-collected.
     started = perf_counter()
-    async def chunks():
-        async with aiofiles.open(path, 'rb') as stream:
-            while chunk := await stream.read(1024 * 1024):
-                yield chunk
     try:
-        async with httpx.AsyncClient(timeout=900) as client:
-            result = await client.post(settings.API_URL + '/api/v1/transcriber/stream',
-                                       params={'filename': upload.filename}, headers={**headers, 'X-Upload-Id': upload.id.removeprefix('upload:')},
-                                       content=chunks())
-            result.raise_for_status()
-            upload.backend_id = result.json()['result']['uuid']
-            upload.phase = 'Uploaded'
-            logger.info('Upload %s: backend transfer and encrypted storage %.2fs', upload.id, perf_counter() - started)
+        if file.size() > settings.MAX_UPLOAD_BYTES:
+            raise ValueError('File too large')
+        async with aclosing(file.iterate(chunk_size=1024 * 1024)) as chunks:
+            async with httpx.AsyncClient(timeout=900) as client:
+                result = await client.post(settings.API_URL + '/api/v1/transcriber/stream',
+                                           params={'filename': upload.filename}, headers={**headers, 'X-Upload-Id': upload.id.removeprefix('upload:')},
+                                           content=chunks)
+                result.raise_for_status()
+                upload.backend_id = result.json()['result']['uuid']
+                upload.phase = 'Uploaded'
+                logger.info('Upload %s: backend transfer and encrypted storage %.2fs', upload.id, perf_counter() - started)
+    except asyncio.CancelledError:
+        upload.phase = 'Failed'
+        upload.error = 'File transfer was interrupted. Please upload it again.'
+        raise
     except Exception:
         upload.phase = 'Failed'
         upload.error = 'Could not store this file. Please upload it again.'
     finally:
-        os.unlink(path)
+        # The iterator is closed even on cancellation. Release our ownership
+        # before queueing/reconciling; NiceGUI handles temporary-file deletion.
+        del file
     if upload.phase != 'Uploaded':
         await finalize_failure(upload, headers)
         return
@@ -138,7 +143,7 @@ def register():
         frame = ui.element('iframe').props('title="Speech2Text workspace"').style('width:100%;height:100vh;border:0;display:block')
         frame._props['src'] = view
         frame.props('id=workspace-content')
-        with ui.column().classes('upload-overlay') as overlay:
+        with ui.column().classes('upload-overlay').props('id=upload-settings-overlay tabindex=-1') as overlay:
             with ui.card().style('width:560px;max-width:94vw;max-height:90vh;overflow-y:auto;padding:24px;gap:16px'):
                 ui.label('Upload & transcription settings').classes('text-lg font-medium')
                 max_size = float(settings.MAX_UPLOAD_BYTES)
@@ -158,20 +163,15 @@ def register():
                     headers = dict(get_auth_header() or {})
                     item.received = True
                     item.phase = 'Uploading'
-                    fd, path = tempfile.mkstemp(prefix='scribe-ui-upload-', suffix='.upload', dir=settings.UPLOAD_TMP_DIR or None)
-                    os.close(fd)
                     try:
-                        copy_started = perf_counter()
-                        await event.file.save(path)
-                        logger.info('Upload %s: local file copy %.2fs (%d bytes)', item.id, perf_counter() - copy_started, os.path.getsize(path))
-                        if os.path.getsize(path) > settings.MAX_UPLOAD_BYTES:
+                        if event.file.size() > settings.MAX_UPLOAD_BYTES:
                             raise ValueError('File too large')
-                        # Snapshot credentials while the authenticated host still exists.
-                        task = asyncio.create_task(forward_file(item, path, headers, user_storage))
+                        # The coroutine retains the upload object after this callback
+                        # returns; _tasks retains the coroutine across page navigation.
+                        task = asyncio.create_task(forward_file(item, event.file, headers, user_storage))
                         _tasks.add(task)
                         task.add_done_callback(_tasks.discard)
                     except Exception:
-                        os.unlink(path)
                         item.phase = 'Failed'
                         item.error = 'Could not receive this file. Check its size and try again.'
 
@@ -234,8 +234,8 @@ def register():
                         verbatim.value = False
                 language.on_value_change(lambda _: update_verbatim())
                 update_verbatim()
-                remember = ui.checkbox('Remember output type and advanced options', value=False).classes('text-sm')
-                remember.tooltip('Remembers output type and verbatim. Speaker count resets to automatic for each upload. Default language is managed in User settings.')
+                remember = ui.checkbox('Remember output type', value=False).classes('text-sm')
+                remember.tooltip('Use your Transcript or Subtitles choice for future uploads. Speaker count is not saved.').style('max-width: min(320px, calc(100vw - 32px)); white-space: normal;')
 
                 async def begin_upload():
                     nonlocal starting
@@ -279,6 +279,7 @@ def register():
                 with ui.row().classes('w-full justify-end gap-2'):
                     ui.button('Cancel', on_click=lambda: overlay.set_visibility(False)).props('flat no-caps', remove='color')
                     start_button = ui.button('Upload', on_click=begin_upload).props('unelevated no-caps')
+        overlay.on('keydown.esc', lambda: overlay.set_visibility(False))
         overlay.set_visibility(False)
 
         def open_upload():
@@ -295,6 +296,8 @@ def register():
             remember.value = False
             update_verbatim()
             overlay.set_visibility(True)
+            # Move focus out of the underlying iframe so Escape reaches this window.
+            ui.run_javascript("requestAnimationFrame(() => document.getElementById('upload-settings-overlay')?.focus())")
         ui.button(on_click=open_upload).props('id=background-upload-launcher').style('display:none')
         ui.add_body_html('''<script>
         window.scribeUploading = false;

@@ -23,7 +23,7 @@ class Upload:
 
     def row(self):
         identifier = self.backend_id if self.phase == "Failed" and self.backend_id else self.id
-        return dict(uuid=identifier, id=identifier, filename=self.filename,
+        return dict(uuid=identifier, id=identifier, upload_id="ui-upload:" + self.id.removeprefix("upload:"), filename=self.filename,
                     status="Uploading" if self.phase == "Uploaded" else self.phase, upload_error=self.error, local_upload=identifier == self.id, upload_progress=self.progress_label(),
                     created_at='', updated_at='', deletion_date='', job_type='',
                     language='', model_type='', output_format='')

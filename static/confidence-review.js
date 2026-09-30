@@ -4,17 +4,26 @@
     let cleanup = null;
     let replayVideo = null;
     let generation = 0;
-    window.__stopConfidenceReplay = (pauseVideo = false) => {
+    // Drop the bounded replay window and its listeners. Playback is left
+    // alone: whether the video keeps running is the caller's decision.
+    const release = () => {
         generation++;
+        if (cleanup) cleanup();
+        cleanup = null;
+        replayVideo = null;
+    };
+    window.__stopConfidenceReplay = (pauseVideo = false) => {
         // End review must also stop playback after a seek cancelled the window.
         const activeVideo = pauseVideo
             ? document.getElementById('subtitle-editor-video')
             : (cleanup ? replayVideo : null);
-        if (cleanup) cleanup();
-        cleanup = null;
+        release();
         activeVideo?.pause();
-        replayVideo = null;
     };
+    // Adjusting the confidence threshold only filters which words are
+    // flagged. It abandons an in-flight replay so its end boundary cannot
+    // pause the video seconds later, and never stops a video being watched.
+    window.__releaseConfidenceReplay = release;
     window.__reviewConfidenceWord = async ({word_id, start, end, replay}) => {
         window.__stopConfidenceReplay();
         const run = generation;
@@ -35,12 +44,15 @@
         const clear = () => {
             if (frame !== null) cancelAnimationFrame(frame);
             video.removeEventListener('timeupdate', check);
-            video.removeEventListener('pause', stop);
+            video.removeEventListener('pause', paused);
             video.removeEventListener('ended', stop);
             video.removeEventListener('seeking', seek);
             video.removeEventListener('seeked', sought);
         };
         const stop = () => { clear(); if (cleanup === stop) cleanup = null; };
+        // pause() queues its event. The pause used to restart a playing video
+        // may arrive after play() has resumed it; keep this replay armed then.
+        const paused = () => { if (video.paused) stop(); };
         const sought = () => { initialSeek = false; };
         const seek = () => {
             if (!initialSeek || Math.abs(video.currentTime - from) > 0.1) stop();
@@ -50,7 +62,7 @@
         };
         const tick = () => { check(); if (cleanup === stop) frame = requestAnimationFrame(tick); };
         video.addEventListener('timeupdate', check);
-        video.addEventListener('pause', stop);
+        video.addEventListener('pause', paused);
         video.addEventListener('ended', stop);
         video.addEventListener('seeking', seek);
         video.addEventListener('seeked', sought);

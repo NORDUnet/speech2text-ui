@@ -689,7 +689,7 @@ class SRTEditor:
             with ui.icon("info_outline").classes("opacity-60 text-sm"):
                 ui.tooltip("Review words with confidence below this percentage. Raise it to include more words; lower it to focus on less certain words. 0% flags none.").style("max-width: 300px; white-space: normal;")
 
-        async def apply_threshold() -> None:
+        def apply_threshold() -> None:
             from utils.usage import record
             value = round(slider.value, 2)
             if value == self.confidence_threshold:
@@ -698,12 +698,25 @@ class SRTEditor:
             self.confidence_threshold = value
             app.storage.user["confidence_threshold"] = value
             threshold_label.set_text(f"{value:.0%}")
-            self._confidence_review_id = None
-            self._confidence_review_status.set_text("")
-            ui.run_javascript("window.__stopConfidenceReplay?.()")
-            self.refresh_display(force_full_refresh=True)
+            # Changing the threshold only filters which words are flagged; it
+            # is not a playback action, so it must never pause, seek, or start
+            # word review. Abandon any in-flight replay so its end boundary
+            # cannot pause the video seconds after the drag, while leaving a
+            # video the viewer is watching running.
+            ui.run_javascript("window.__releaseConfidenceReplay?.()")
+            # Keep the reviewer's place when that word is still flagged at the
+            # new threshold; only a word that fell out of range clears it.
+            if not any(
+                target["word_id"] == self._confidence_review_id
+                for target in self.confidence_review_targets()
+            ):
+                self._confidence_review_id = None
+                self._confidence_review_caption_index = None
+                self._confidence_review_status.set_text("")
+            # Reuse the existing caption containers: a full rebuild resets the
+            # transcript's scroll position.
+            self.refresh_display()
             self.refresh_confidence_review()
-            await self.navigate_confidence()
 
         # Apply on release, rather than rebuilding the review list while dragging.
         slider.on("change", lambda e: apply_threshold())

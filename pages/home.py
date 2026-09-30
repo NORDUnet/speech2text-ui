@@ -19,6 +19,7 @@ from time import monotonic
 from nicegui import ui, events
 from utils.background_upload import owner_queue
 from utils.upload_state import merge_rows
+from utils.file_selection import file_key, current_selection
 from utils.common import (
     default_styles,
     page_init,
@@ -71,8 +72,14 @@ def create() -> None:
             else:
                 export_tooltip.text = "Select one or more already completed files to export"
 
+        def selection_changed(event):
+            # Events can contain row snapshots from before the latest status update.
+            table.selected = current_selection(table.rows, event.selection)
+            toggle_buttons(table.selected)
+
         table = ui.table(
-            on_select=lambda e: toggle_buttons(e.selection),
+            on_select=selection_changed,
+            row_key="selection_key",
             columns=jobs_columns,
             rows=[],
             selection="multiple",
@@ -90,7 +97,7 @@ def create() -> None:
             """
             <q-checkbox
                 :model-value="props.selected"
-                @update:model-value="val => { if (!val) { $parent.$emit('deselect_all'); } else { props.selected = true; } }"
+                @update:model-value="val => { if (!val) { $parent.$emit('deselect_all'); } else { $parent.$emit('select_all'); } }"
             />
             """,
         )
@@ -99,6 +106,11 @@ def create() -> None:
             table.selected = []
             toggle_buttons([])
 
+        def select_all():
+            table.selected = list(table.rows)
+            toggle_buttons(table.selected)
+
+        table.on("select_all", select_all)
         table.on("deselect_all", deselect_all)
 
         def table_handle_row_click(e: events.GenericEventArguments) -> None:
@@ -119,7 +131,7 @@ def create() -> None:
                     <span class="file-status-dot" aria-hidden="true"></span>
                     <span>{{ props.value }}</span>
                     <q-icon v-if="props.row.upload_error" name="info_outline" size="16px" tabindex="0" aria-label="Failure details">
-                        <q-tooltip max-width="300px">{{ props.row.upload_error }}</q-tooltip>
+                        <q-tooltip max-width="min(360px, calc(100vw - 32px))" style="white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.4;">{{ props.row.upload_error }}</q-tooltip>
                     </q-icon>
                 </div>
                 <div v-if="props.row.upload_progress" class="file-progress">{{ props.row.upload_progress }}</div>
@@ -220,6 +232,12 @@ def create() -> None:
                 if fetched is not None:
                     backend_rows = [r for r in fetched if r["uuid"] not in deleted_ids]
             rows = [r for r in merge_rows(backend_rows, uploads) if r["uuid"] not in deleted_ids]
+
+            for row in rows:
+                row["selection_key"] = file_key(row)
+            # Preserve file identity, but replace stale status/permission snapshots.
+            table.selected = current_selection(rows, table.selected)
+            toggle_buttons(table.selected)
 
             # Replacing identical rows rebuilds hovered tooltips every tick.
             # Keep browser elements intact until displayed data changes.

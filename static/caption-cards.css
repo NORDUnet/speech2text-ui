@@ -1,4 +1,4 @@
-/* Opt-in ancestor keeps the Classic appearance and editing behavior intact. */
+/* Shared Minimal appearance for subtitles and transcription. */
 .caption-style-minimal {
     --caption-surface: #ffffff;
     --caption-border: #e2e4e7;
@@ -124,8 +124,6 @@
     outline: 2px solid var(--caption-selected);
     outline-offset: 2px;
 }
-.caption-style-toggle { border: 1px solid #80808055; border-radius: 7px; overflow: hidden; }
-.caption-style-toggle .q-btn { font-size: 12px; padding: 4px 12px; }
 @media (prefers-reduced-motion: reduce) {
     .caption-style-minimal .caption-card { transition: none; }
 }

@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, Mock
 from utils.upload_state import Upload, merge_rows
+from utils.file_selection import file_key, current_selection
 
 class PollingTests(unittest.IsolatedAsyncioTestCase):
     async def test_progress_refresh_does_not_refetch_file_list(self):
@@ -14,11 +15,11 @@ class PollingTests(unittest.IsolatedAsyncioTestCase):
         now = [0.0]
         uploads = [Upload('test.mp4', 100)]
         fetch = AsyncMock(return_value=[])
-        table = SimpleNamespace(rows=[])
+        table = SimpleNamespace(rows=[],selected=[])
         table.update_rows = Mock(side_effect=lambda rows, **_: setattr(table, 'rows', rows))
         button = SimpleNamespace(set_enabled=Mock())
         env = dict(monotonic=lambda: now[0], owner_queue=lambda: uploads,
-                   jobs_get=fetch, merge_rows=merge_rows, table=table,
+                   jobs_get=fetch, merge_rows=merge_rows, file_key=file_key, current_selection=current_selection, toggle_buttons=Mock(), table=table,
                    delete=button, bulk_export=button, bulk_transcribe=button)
         # Preserve the callback's closure over its page-specific cached listing.
         source = 'def factory():\n    backend_rows = []\n    last_fetch = None\n    deleted_ids = set()\n' + indent(ast.unparse(callback), '    ') + '\n    return update_rows\n'
@@ -68,7 +69,7 @@ class PollingTests(unittest.IsolatedAsyncioTestCase):
         table.update_rows=Mock(side_effect=lambda rows,**_:setattr(table,"rows",rows))
         fetch=AsyncMock(return_value=list(old))
         button=SimpleNamespace(set_enabled=Mock())
-        env=dict(monotonic=lambda:0,owner_queue=lambda:[],jobs_get=fetch,merge_rows=merge_rows,
+        env=dict(monotonic=lambda:0,owner_queue=lambda:[],jobs_get=fetch,merge_rows=merge_rows,file_key=file_key,current_selection=current_selection,
                  table=table,delete=button,bulk_export=button,toggle_buttons=Mock())
         source="def factory():\n    backend_rows=[]\n    last_fetch=None\n    deleted_ids=set()\n"
         source+="\n".join(indent(ast.unparse(callbacks[n]),"    ") for n in ("update_rows","forget_deleted"))
@@ -122,3 +123,54 @@ class PollingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([r["uuid"] for r in table.rows],["failed"])
         self.assertEqual(uploads,[])
         self.assertEqual(notify.call_args.kwargs["type"],"warning")
+
+
+    async def test_select_all_survives_upload_transition_and_refreshes_actions(self):
+        from nicegui import ui
+        tree=ast.parse((Path(__file__).resolve().parents[1]/"pages/home.py").read_text())
+        names={"toggle_buttons","selection_changed","select_all","deselect_all","update_rows"}
+        callbacks={n.name:n for n in ast.walk(tree) if isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef)) and n.name in names}
+        existing=[dict(id=i,uuid=f"job-{i}",status="Completed",output_format="SRT") for i in range(23)]
+        upload=Upload("new.mp4",100,options={"language":"English"})
+        uploads=[upload]
+        fetch=AsyncMock(return_value=existing)
+        with ui.column() as host:
+            table=ui.table(columns=[],rows=[],row_key="selection_key",selection="multiple",pagination=10)
+            delete=ui.button("Delete")
+            export=ui.button("Export")
+            env=dict(ui=ui,table=table,delete=delete,bulk_export=export,
+                     delete_tooltip=SimpleNamespace(text=""),export_tooltip=SimpleNamespace(text=""),
+                     monotonic=lambda:0,owner_queue=lambda:uploads,jobs_get=fetch,merge_rows=merge_rows,
+                     file_key=file_key,current_selection=current_selection)
+            for name in names-{"update_rows"}:
+                exec(compile(ast.Module(body=[callbacks[name]],type_ignores=[]),"home", "exec"),env)
+            source="def factory():\n    backend_rows=[]\n    last_fetch=None\n    deleted_ids=set()\n"+indent(ast.unparse(callbacks["update_rows"]),"    ")+"\n    return update_rows\n"
+            exec(source,env)
+            update=env["factory"]()
+            await update()
+            env["select_all"]()
+            self.assertEqual(len(table.selected),24)
+            self.assertFalse(delete.enabled)
+            stale=list(table.selected)
+            # Backend replacement changes both the uuid and numeric list positions.
+            new=dict(id=0,uuid="new-job",upload_id="ui-upload:"+upload.id.removeprefix("upload:"),status="Queued",output_format="SRT")
+            fetch.return_value=[new]+[dict(r,id=r["id"]+1) for r in existing]
+            await update()
+            self.assertEqual(len(table.selected),24)
+            self.assertTrue(delete.enabled)
+            self.assertIn("new-job",[r["uuid"] for r in table.selected])
+            for status in ("Transcribing","Completed"):
+                fetch.return_value[0]=dict(new,status=status)
+                await update()
+                self.assertEqual(len(table.selected),24)
+                self.assertTrue(delete.enabled)
+            # Late selection events must use current status, not an Uploading snapshot.
+            env["selection_changed"](SimpleNamespace(selection=stale))
+            self.assertTrue(delete.enabled)
+            self.assertTrue(export.enabled)
+            env["selection_changed"](SimpleNamespace(selection=stale[1:]))
+            self.assertTrue(delete.enabled)
+            env["deselect_all"]()
+            self.assertFalse(delete.enabled)
+            self.assertFalse(export.enabled)
+        host.delete()

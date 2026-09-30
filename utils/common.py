@@ -601,7 +601,7 @@ def show_help_dialog() -> None:
                 'display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 14px; width: 100%;'
             ):
                 help_box('User settings', 'person',
-                         'Set your default language here. Remember output type and advanced options in the upload window.')
+                         'Set your default language here. Use Remember output type in the upload window to save your Transcript or Subtitles preference.')
                 help_box('Editor tools', 'keyboard',
                          'Open Shortcuts for keyboard commands. When available, Review words lets you adjust the confidence threshold and review uncertain words.')
                 help_box('Give feedback', 'rate_review',
