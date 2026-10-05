@@ -61,7 +61,11 @@ async def index(request: Request) -> None:
         app.storage.browser["_scribe_bk"] = secrets.token_hex(32)
 
     # Wait for client connection before accessing user storage.
-    await ui.context.client.connected()
+    client = ui.context.client
+    await client.connected()
+    # NiceGUI also wakes connected() when it deletes an abandoned client.
+    if client.content.is_deleted:
+        return
 
     if refresh_token:
         app.storage.user["refresh_token"] = refresh_token
@@ -76,6 +80,9 @@ async def index(request: Request) -> None:
         )
     except TimeoutError:
         timezone = "UTC"
+
+    if client.content.is_deleted:
+        return
 
     app.storage.user["timezone"] = timezone
 
