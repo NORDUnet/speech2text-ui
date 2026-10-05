@@ -40,7 +40,7 @@ async def finalize_failure(upload, headers):
             upload.phase, upload.error = 'Queued', ''
         elif result['status'] == 'failed':
             upload.phase = 'Failed'
-            upload.error = result.get('error') or 'Upload or transcription failed. Upload the file again.'
+            upload.error = upload.error or result.get('error') or 'Upload or transcription failed. Upload the file again.'
     except (httpx.HTTPError, ValueError, KeyError):
         # Keep the local failure visible and reconcile when the backend returns.
         pass
@@ -78,6 +78,15 @@ async def submit_upload(upload, headers, user_storage=None):
             detail = 'Transcription could not start. Upload the file again to start a new job.'
             if error.response.status_code == 403:
                 detail = 'Transcription was refused. Check your quota or sign in again, then upload the file again.'
+            try:
+                body = error.response.json()
+                reason = body.get('detail', body.get('result', {}).get('error'))
+                if isinstance(reason, dict):
+                    reason = reason.get('message')
+                if isinstance(reason, str) and reason.strip():
+                    detail = reason
+            except (ValueError, AttributeError):
+                pass
             upload.error = detail
             break
         except (httpx.RequestError, ValueError, KeyError):
@@ -89,7 +98,7 @@ async def submit_upload(upload, headers, user_storage=None):
     await finalize_failure(upload, current_headers)
 
 
-async def forward_file(upload, file: ui.upload.FileUpload, headers, user_storage=None):
+async def forward_file(upload, file: ui.upload.FileUpload, headers, user_storage=None, *, on_failure=None):
     # Keep the NiceGUI object, not just its path: it owns its temporary file.
     # NiceGUI 3.7.1 deletes that file when the object is garbage-collected.
     started = perf_counter()
@@ -118,9 +127,22 @@ async def forward_file(upload, file: ui.upload.FileUpload, headers, user_storage
         del file
     if upload.phase != 'Uploaded':
         await finalize_failure(upload, headers)
-        return
-    if upload.options:
+    elif upload.options:
         await submit_upload(upload, headers, user_storage)
+    if upload.phase == 'Failed' and on_failure is not None:
+        on_failure(upload)
+
+
+def show_upload_failure(upload):
+    """Keep the failure readable until the user dismisses it."""
+    with ui.dialog() as dialog:
+        with ui.card().classes('w-full').style('max-width: 560px;'):
+            ui.label('Transcription could not start').classes('text-h6')
+            ui.label(upload.filename).style('overflow-wrap: anywhere;')
+            ui.label(upload.error).style('white-space: pre-wrap; overflow-wrap: anywhere;')
+            ui.label('After resolving the problem, upload the file again.').classes('text-sm')
+            ui.button('Close', on_click=dialog.close)
+    dialog.open()
 
 
 def register():
@@ -168,12 +190,18 @@ def register():
                             raise ValueError('File too large')
                         # The coroutine retains the upload object after this callback
                         # returns; _tasks retains the coroutine across page navigation.
-                        task = asyncio.create_task(forward_file(item, event.file, headers, user_storage))
+                        def report_failure(upload):
+                            with client:
+                                show_upload_failure(upload)
+                        task = asyncio.create_task(forward_file(item, event.file, headers, user_storage,
+                                                                on_failure=report_failure))
                         _tasks.add(task)
                         task.add_done_callback(_tasks.discard)
                     except Exception:
                         item.phase = 'Failed'
                         item.error = 'Could not receive this file. Check its size and try again.'
+                        with client:
+                            show_upload_failure(item)
 
                 uploader = ui.upload(label='Choose files', on_upload=receive, multiple=True, auto_upload=False,
                                      max_files=5, max_file_size=settings.MAX_UPLOAD_BYTES,
