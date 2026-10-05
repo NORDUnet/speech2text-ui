@@ -5,7 +5,7 @@ import weakref
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 import httpx
 from nicegui import core, ui
 from nicegui.elements.upload_files import LargeFileUpload, SmallFileUpload, create_file_upload
@@ -35,8 +35,14 @@ class ForwardTests(unittest.IsolatedAsyncioTestCase):
             return httpx.Response(status, json={'result': {'uuid': 'backend-id'}})
         def client(**kwargs):
             return client_class(transport=httpx.MockTransport(handle), **kwargs)
+        report_failure = Mock()
         with patch.object(bg.settings, 'API_URL', 'https://test.invalid'), patch.object(bg.httpx, 'AsyncClient', client):
-            await bg.forward_file(upload, LargeFileUpload('test.mp4', 'video/mp4', Path(path)), {'Authorization': 'Bearer fixture'}, storage)
+            await bg.forward_file(upload, LargeFileUpload('test.mp4', 'video/mp4', Path(path)), {'Authorization': 'Bearer fixture'}, storage,
+                                  on_failure=report_failure)
+        if upload.phase == 'Failed':
+            report_failure.assert_called_once_with(upload)
+        else:
+            report_failure.assert_not_called()
         self.assertEqual(storage, {})
         self.assertFalse(Path(path).exists())
         return upload
@@ -78,6 +84,22 @@ class ForwardTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(upload.phase, 'Failed')
         self.assertEqual(upload.backend_id, 'existing')
         self.assertTrue(upload.error)
+
+    async def test_quota_reason_survives_failure_reconciliation(self):
+        for body in ({'detail': {'code': 'quota_exceeded', 'message': 'Shared monthly quota exceeded.'}},
+                     {'result': {'error': 'Shared monthly quota exceeded.'}}):
+            with self.subTest(body=body):
+                upload = Upload('x', 1, backend_id='existing', options=dict(language='English', output_format='Transcript', speakers=0, verbatim=False))
+                client_class = httpx.AsyncClient
+                def handle(request):
+                    if request.method == 'PUT':
+                        return httpx.Response(403, json=body)
+                    return httpx.Response(200, json={'result': {'uuid': 'existing', 'status': 'failed', 'error': 'Job failed before starting.'}})
+                with patch.object(bg.settings, 'API_URL', 'https://test.invalid'), patch.object(bg.httpx, 'AsyncClient', lambda **kw: client_class(transport=httpx.MockTransport(handle), **kw)):
+                    await bg.submit_upload(upload, {})
+                    await bg.finalize_failure(upload, {})
+                self.assertEqual(upload.phase, 'Failed')
+                self.assertEqual(upload.error, 'Shared monthly quota exceeded.')
 
 
     async def test_failed_response_is_reconciled_with_accepted_job(self):
