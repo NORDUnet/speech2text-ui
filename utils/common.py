@@ -15,13 +15,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import asyncio
 import glob
 import os
 import re
 import tempfile
 
-import aiofiles
 import httpx
 import pytz
 
@@ -37,7 +35,7 @@ from utils.token import (
     get_user_data,
     token_refresh,
 )
-from utils.helpers import storage_decrypt, customers_get, feedback_send
+from utils.helpers import storage_decrypt, feedback_send
 
 settings = get_settings()
 # Keep large uploads off RAM (spill to disk past the spool threshold) and route
@@ -123,6 +121,14 @@ jobs_columns = [
 
 default_styles = """
     <style>
+        /* Shared brand palette for NiceGUI controls and success states. */
+        :root, .body--light, .body--dark {
+            --color-nordunet-blue: #005eb8;
+            --q-primary: var(--color-nordunet-blue) !important;
+            --q-secondary: var(--color-nordunet-blue) !important;
+            --q-accent: var(--color-nordunet-blue) !important;
+            --q-positive: var(--color-nordunet-blue) !important;
+        }
         /* ── Theme variables (light) ── */
         :root, .body--light {
             --color-bg-page: #ffffff;
@@ -134,12 +140,12 @@ default_styles = """
             --color-text-primary: #000000;
             --color-text-muted: #666666;
             --color-brand: #082954;
-            --color-accent: #d3ecbe;
-            --color-on-accent: #000000;
+            --color-accent: var(--color-nordunet-blue);
+            --color-on-accent: #ffffff;
             --color-on-brand: #ffffff;
             /* Primary action buttons (Upload, Start transcribing, etc.) */
-            --color-primary-btn-bg: #d3ecbe;
-            --color-primary-btn-text: #000000;
+            --color-primary-btn-bg: var(--color-nordunet-blue);
+            --color-primary-btn-text: #ffffff;
             /* Solid blue buttons (login, edit, etc.) */
             --color-btn-blue-bg: #082954;
             --color-delete-text: #721c24;
@@ -170,7 +176,7 @@ default_styles = """
             --color-gray-700: #ffffff;
             --color-gray-800: #ffffff;
             --color-brand: #5b9bd5;
-            --color-accent: #2e7d32;
+            --color-accent: var(--color-nordunet-blue);
             --color-on-accent: #ffffff;
             --color-on-brand: #ffffff;
             /* Primary action buttons + solid blue buttons: NORDUnet blue, white text */
@@ -268,20 +274,6 @@ default_styles = """
         .q-chip {
             background-color: var(--color-accent) !important;
             color: var(--color-on-accent) !important;
-        }
-        /* Selected-value chips (e.g. allowed-domains select) default to the
-           accent colour, which is green in dark mode. Use the same muted navy as
-           selected table rows so they fit the theme. Dark mode only — light mode
-           keeps the accent. */
-        .body--dark .q-chip {
-            background-color: #1b3a5e !important;
-            color: #ffffff !important;
-        }
-        /* "Enabled" toggles use color="positive" (green). Recolour to NORDUnet
-           blue in dark mode by overriding the variable Quasar's positive colour
-           reads. Light mode keeps green. */
-        .body--dark .q-toggle {
-            --q-positive: var(--color-btn-blue-bg) !important;
         }
         /* Announcement banners set light pastel backgrounds + dark text/icon
            inline (good for light mode). In dark mode, give each severity a dark
@@ -500,6 +492,23 @@ default_styles = """
         .q-btn.default-style {
             color: var(--color-primary-btn-text) !important;
         }
+        /* Secondary and disabled actions do not use the filled blue palette. */
+        .secondary-style {
+            background-color: var(--color-control-bg);
+            border: 1px solid var(--color-border);
+        }
+        .q-btn.secondary-style {
+            color: var(--color-text-primary) !important;
+        }
+        .q-btn.default-style.disabled,
+        .q-btn.secondary-style.disabled,
+        .q-btn.delete-style.disabled {
+            /* Match the original Quasar disabled treatment, including icons. */
+            color: var(--color-text-primary) !important;
+            background-color: var(--color-disabled-bg) !important;
+            border-color: var(--color-disabled-border) !important;
+            opacity: 0.6 !important;
+        }
         .q-btn.delete-style,
         .q-btn.cancel-style,
         .q-btn.button-close,
@@ -528,128 +537,82 @@ default_styles = """
 """
 
 
-def _get_support_contact_email() -> str:
-    """
-    Look up the support contact email for the current user's customer.
-    """
-
-    try:
-        user_data = get_user_data() or {}
-        user_realm = user_data.get("realm", "")
-        if not user_realm:
-            return ""
-
-        customers_data = customers_get()
-        customers = (
-            customers_data.get("result", []) if isinstance(customers_data, dict) else []
-        )
-
-        for c in customers:
-            c_realms = [
-                r.strip() for r in (c.get("realms") or "").split(",") if r.strip()
-            ]
-            if user_realm in c_realms:
-                return c.get("support_contact_email", "")
-    except Exception:
-        pass
-
-    return ""
-
-
 def show_help_dialog() -> None:
-    """
-    Show a help dialog with information about the application.
-    """
+    """Explain the current upload and editing workflow without API lookups."""
+    max_size = float(settings.MAX_UPLOAD_BYTES)
+    for size_unit in ('bytes', 'KiB', 'MiB', 'GiB', 'TiB'):
+        if max_size < 1024 or size_unit == 'TiB':
+            break
+        max_size /= 1024
+
+    steps = [
+        ('Upload & configure', 'upload',
+         f'Choose up to 5 files, max {max_size:g} {size_unit} each. Select language and output type, then click Upload.'),
+        ('Monitor in My files', 'folder',
+         'Follow upload progress and job status. Transcription starts automatically after upload.',
+         'Keep this tab open until transfer finishes. You can browse other pages within it.'),
+        ('Review & edit', 'edit',
+         'Click Edit on a completed file. Correct the text and preview subtitles on the video.'),
+        ('Save & export', 'download',
+         'Save your changes, then choose Export to download your transcript or subtitles.'),
+    ]
+
+    def help_box(title, icon, description, note=None, tint=False):
+        with ui.card().classes('no-shadow w-full').style(
+            'border: 1px solid var(--color-border, #dedede); border-radius: 12px; '
+            'padding: 18px; gap: 10px; height: 100%; '
+            + ('background: color-mix(in srgb, #005eb8 5%, var(--color-bg-surface, white));' if tint
+               else 'background: var(--color-bg-surface, white);')
+        ):
+            with ui.row().classes('items-center no-wrap gap-2'):
+                ui.icon(icon).classes('text-xl opacity-70')
+                ui.label(title).style('font-size: 15px; font-weight: 600; line-height: 1.4;')
+            ui.label(description).style('font-size: 14px; line-height: 1.6; opacity: 0.85;')
+            if note:
+                ui.label(note).style('font-size: 13px; line-height: 1.5; opacity: 0.75;')
 
     with ui.dialog() as dialog:
-        with (
-            ui.card()
-            .style(
-                "max-width: 900px; padding: 32px; background: linear-gradient(to bottom, #ffffff 0%, #f8f9fa 100%);"
-            )
-            .classes("no-shadow help-dialog")
+        with ui.card().classes('help-dialog no-shadow').style(
+            'width: 900px; max-width: 94vw; max-height: 85vh; overflow-y: auto; '
+            'padding: 24px; background-color: var(--color-bg-surface); gap: 16px;'
         ):
-            with ui.row().classes("w-full items-center justify-between mb-6"):
-                ui.label("Help & Documentation").classes("text-h4 font-bold")
-                ui.button(icon="close", on_click=dialog.close).props(
-                    "flat round dense color=grey-7"
+            with ui.row().classes('w-full items-center justify-between'):
+                ui.label('Getting the most out of Speech2Text').style('font-size: 22px; font-weight: 500; line-height: 1.3;')
+                ui.button(icon='close', on_click=dialog.close).props(
+                    'flat round dense aria-label="Close help"', remove='color'
                 )
+            ui.label('Getting started').style(
+                'font-size: 12px; font-weight: 600; letter-spacing: 0.08em; '
+                'text-transform: uppercase; opacity: 0.65; margin-top: 8px;'
+            )
+            with ui.element('div').style(
+                'display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 14px; width: 100%;'
+            ):
+                for index, step in enumerate(steps, 1):
+                    title, icon, description, *note = step
+                    help_box(f'{index}. {title}', icon, description, note[0] if note else None)
 
-            with ui.column().classes("w-full gap-6"):
-                with ui.card().classes("bg-blue-50 border-l-4").style(
-                    "border-left-color: #082954; padding: 20px;"
-                ):
-                    ui.label(settings.ABOUT_TEXT).classes("text-h6 font-semibold mb-2")
-                    ui.label(
-                        "A powerful transcription service using Whisper AI models to convert audio and video files into searchable text or time-coded subtitles with high accuracy."
-                    ).classes("text-body1")
-
-                ui.label("Getting started").classes("text-h6 font-bold mt-2")
-
-                with ui.grid(columns=2).classes("w-full gap-4"):
-                    for step_num, step_title, step_desc, step_icon in [
-                        (
-                            "1",
-                            "Upload Files",
-                            "Click Upload or drag & drop up to 5 files (max 4GB each). Supports MP3, WAV, MP4, MKV, AVI, and more.",
-                            "upload_file",
-                        ),
-                        (
-                            "2",
-                            "Configure",
-                            'Click the "Transcribe" button, select language, number of speakers, and output format (transcript or subtitles).',
-                            "settings",
-                        ),
-                        (
-                            "3",
-                            "Monitor",
-                            "Track job status on the dashboard. Jobs process in the background.",
-                            "pending_actions",
-                        ),
-                        (
-                            "4",
-                            "Edit & Export",
-                            "Click completed jobs to refine in the editor. Press ? for keyboard shortcuts.",
-                            "edit_note",
-                        ),
-                    ]:
-                        with ui.card().classes("p-4"):
-                            with ui.row().classes("items-center gap-3 mb-2"):
-                                ui.icon(step_icon, size="md").classes("text-blue-700")
-                                ui.label(f"{step_num}. {step_title}").classes(
-                                    "text-subtitle1 font-semibold"
-                                )
-                            ui.label(step_desc).classes("text-body2 text-grey-8")
-
-                with ui.row().classes("w-full gap-4 items-stretch"):
-                    with ui.card().classes("flex-1 bg-amber-50 p-4"):
-                        with ui.row().classes("items-center gap-2 mb-2"):
-                            ui.icon("security", size="sm").classes("text-amber-800")
-                            ui.label("Privacy").classes("text-subtitle1 font-semibold")
-                        ui.label(
-                            "Files are encrypted, only accessible to you, and auto-deleted after the scheduled deletion date."
-                        ).classes("text-body2")
-
-                    with ui.card().classes("flex-1 bg-green-50 p-4"):
-                        with ui.row().classes("items-center gap-2 mb-2"):
-                            ui.icon("help", size="sm").classes("text-green-800")
-                            ui.label("Support").classes("text-subtitle1 font-semibold")
-
-                        ui.label(
-                            "Contact your institution's IT department for technical support or questions."
-                        ).classes("text-body2")
-
-                        support_contact = _get_support_contact_email()
-                        if support_contact:
-                            is_url = support_contact.startswith(("http://", "https://"))
-                            href = support_contact if is_url else f"mailto:{support_contact}"
-                            label = "Support:" if is_url else "Support email:"
-                            with ui.row().classes("items-center gap-1"):
-                                ui.label(label).classes("text-body2")
-                                ui.link(
-                                    support_contact, href
-                                ).classes("text-body2")
-
+            ui.separator().classes('my-1')
+            ui.label('Useful to know').style(
+                'font-size: 12px; font-weight: 600; letter-spacing: 0.08em; '
+                'text-transform: uppercase; opacity: 0.65;'
+            )
+            with ui.element('div').style(
+                'display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 14px; width: 100%;'
+            ):
+                help_box('User settings', 'person',
+                         'Set your default language here. Use Remember output type in the upload window to save your Transcript or Subtitles preference.')
+                help_box('Editor tools', 'keyboard',
+                         'Open Shortcuts for keyboard commands. When available, Review words lets you adjust the confidence threshold and review uncertain words.')
+                help_box('Give feedback', 'rate_review',
+                         'Share ideas or report a problem using Give feedback in the side menu.')
+            with ui.element('div').style(
+                'display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 14px; width: 100%;'
+            ):
+                help_box('Privacy', 'security',
+                         'Stored files are encrypted and automatically deleted. See the scheduled deletion date in My files.', tint=True)
+                help_box('Support', 'help',
+                         "Contact your institution's IT department for technical support or questions.", tint=True)
         dialog.open()
 
 
@@ -863,7 +826,7 @@ def show_feedback_dialog() -> None:
     dialog.open()
 
 
-def page_init(header_text: Optional[str] = "", use_drawer: bool = False) -> None:
+def page_init(header_text: Optional[str] = "", use_drawer: bool = False) -> ui.dark_mode | None:
     """
     Initialize the page with a header and background color.
     """
@@ -900,7 +863,8 @@ def page_init(header_text: Optional[str] = "", use_drawer: bool = False) -> None
 
     # Dark mode: None = auto (follow system), True = dark, False = light.
     # Stored per session in app.storage.user and applied live (no page reload).
-    dark = ui.dark_mode(app.storage.user.get("dark_mode", None))
+    app.storage.user.setdefault("dark_mode", None)
+    dark = ui.dark_mode(app.storage.user["dark_mode"]).bind_value(app.storage.user, "dark_mode")
 
     # The "Prune" outline button is forced to color=black (.text-black). In dark
     # mode that black is set by an adopted/layered Quasar rule that outranks any
@@ -1014,7 +978,7 @@ def page_init(header_text: Optional[str] = "", use_drawer: bool = False) -> None
         admin_items = [
             ("/admin/users", "people", "Users"),
             ("/admin", "group_work", "Groups"),
-            ("/admin/quotas", "speed", "Shared quotas"),
+            ("/admin/quotas", "speed", "Quotas"),
             ("/admin/rules", "rule", "User provisioning"),
             ("/admin/customers", "business", "Customers" if is_bofh else "Account"),
             ("/admin/feedback", "reviews", "Feedback"),
@@ -1068,8 +1032,9 @@ def page_init(header_text: Optional[str] = "", use_drawer: bool = False) -> None
                             t.set_visibility(show_tips)
                             menu_tooltips.append(t)
 
+                    # Temporarily hidden; remove hidden to restore the API menu item.
                     with ui.element("div").style(menu_item_style).classes(
-                        "menu-item"
+                        "menu-item hidden"
                     ).on(
                         "click",
                         lambda: ui.run_javascript(
@@ -1111,7 +1076,7 @@ def page_init(header_text: Optional[str] = "", use_drawer: bool = False) -> None
                 ui.separator()
 
                 with ui.element("div").style(menu_item_style).classes("menu-item").on(
-                    "click", lambda: ui.navigate.to("/logout")
+                    "click", lambda: ui.run_javascript("window.top.location.href = '/logout'")
                 ):
                     ui.icon("logout", color="black").style("font-size: 20px;")
                     ui.label("Logout").classes("menu-label")
@@ -1155,6 +1120,7 @@ def page_init(header_text: Optional[str] = "", use_drawer: bool = False) -> None
                     icon=_dark_icon(app.storage.user.get("dark_mode", None)),
                 ).props("flat", remove="color") as dark_btn:
                     ui.tooltip("Light / dark / auto")
+                dark_btn.bind_icon_from(dark, "value", backward=_dark_icon)
                 dark_btn.on("click", lambda: cycle_dark(dark_btn))
                 with ui.button(
                     icon="help",
@@ -1223,6 +1189,7 @@ def page_init(header_text: Optional[str] = "", use_drawer: bool = False) -> None
                     icon=_dark_icon(app.storage.user.get("dark_mode", None)),
                 ).props("flat", remove="color") as dark_btn:
                     ui.tooltip("Light / dark / auto")
+                dark_btn.bind_icon_from(dark, "value", backward=_dark_icon)
                 dark_btn.on("click", lambda: cycle_dark(dark_btn))
                 with ui.button(
                     icon="help",
@@ -1231,12 +1198,13 @@ def page_init(header_text: Optional[str] = "", use_drawer: bool = False) -> None
                     ui.tooltip("Help")
                 with ui.button(
                     icon="logout",
-                    on_click=lambda: ui.navigate.to("/logout"),
+                    on_click=lambda: ui.run_javascript("window.top.location.href = '/logout'"),
                 ).props("flat", remove="color"):
                     ui.tooltip("Logout")
                 ui.add_head_html("<style>body {background-color: var(--color-bg-surface);}</style>")
 
     _show_announcement_banners()
+    return dark
 
 
 def add_timezone_to_timestamp(timestamp: str) -> str:
@@ -1252,7 +1220,7 @@ def add_timezone_to_timestamp(timestamp: str) -> str:
     return local_time.strftime("%Y-%m-%d %H:%M")
 
 
-async def jobs_get() -> list:
+async def jobs_get(*, include_uploads: bool = True) -> list | None:
     """
     Get the list of transcription jobs from the API.
     """
@@ -1272,7 +1240,11 @@ async def jobs_get() -> list:
             )
             response.raise_for_status()
     except httpx.HTTPError:
-        return []
+        if not include_uploads:
+            return None
+        from utils.background_upload import owner_queue
+        from utils.upload_state import merge_rows
+        return merge_rows([], owner_queue())
 
     # Get current time in user's timezone
     user_timezone = app.storage.user.get("timezone", "UTC")
@@ -1282,6 +1254,8 @@ async def jobs_get() -> list:
     for idx, job in enumerate(response.json()["result"]["jobs"]):
         if job["status"] == "in_progress":
             job["status"] = "transcribing"
+        elif job["status"] == "pending":
+            job["status"] = "queued"
 
         deletion_date = add_timezone_to_timestamp(job["deletion_date"])
         created_at = add_timezone_to_timestamp(job["created_at"])
@@ -1315,6 +1289,7 @@ async def jobs_get() -> list:
         job_data = {
             "id": idx,
             "uuid": job["uuid"],
+            "upload_id": job.get("external_id", ""),
             "filename": job["filename"],
             "created_at": created_at,
             "updated_at": updated_at,
@@ -1327,12 +1302,17 @@ async def jobs_get() -> list:
             "job_type": job_type,
         }
 
+        if job["status"] == "failed":
+            reason = job.get("error") or "Upload or transcription failed."
+            job_data["upload_error"] = reason if "upload the file again" in reason.lower() else reason + " Upload the file again to start a new job."
         jobs.append(job_data)
 
     # Sort jobs by created_at in descending order
     jobs.sort(key=lambda x: x["created_at"], reverse=True)
 
-    return jobs
+    from utils.background_upload import owner_queue
+    from utils.upload_state import merge_rows
+    return merge_rows(jobs, owner_queue()) if include_uploads else jobs
 
 
 def table_click(event) -> None:
@@ -1360,285 +1340,9 @@ def table_click(event) -> None:
         )
 
 
-async def post_file(file_path: str, filename: str) -> bool:
-    """
-    Stream a file from disk to the API without loading it into memory.
-    """
-
-    async def _file_chunks():
-        # Stream the file from disk in bounded chunks so the UI never holds the
-        # whole file in memory while forwarding it to the backend.
-        async with aiofiles.open(file_path, "rb") as f:
-            while True:
-                chunk = await f.read(1024 * 1024)
-                if not chunk:
-                    break
-                yield chunk
-
-    try:
-        async with httpx.AsyncClient(timeout=900) as client:
-            response = await client.post(
-                f"{settings.API_URL}/api/v1/transcriber/stream",
-                params={"filename": filename},
-                content=_file_chunks(),
-                headers=get_auth_header(),
-            )
-
-            response.raise_for_status()
-
-            if response.status_code != 200:
-                raise httpx.HTTPStatusError(
-                    f"Upload failed, status code: {response.status_code}",
-                    request=response.request,
-                    response=response,
-                )
-    except httpx.HTTPStatusError as e:
-        ui.notify(
-            f"Error when uploading file: {str(e)}", type="negative", position="top"
-        )
-        return False
-
-    return True
-
-
-def format_size(bytes_val) -> str:
-    """
-    Format bytes into a human-readable string.
-    """
-    if bytes_val < 1024:
-        return f"{bytes_val} B"
-    elif bytes_val < 1024 * 1024:
-        return f"{bytes_val / 1024:.1f} KB"
-    elif bytes_val < 1024 * 1024 * 1024:
-        return f"{bytes_val / (1024 * 1024):.1f} MB"
-    else:
-        return f"{bytes_val / (1024 * 1024 * 1024):.1f} GB"
-
-
-def toggle_upload_status(upload_column, status_column, dialog):
-    upload_column.visible = False
-    status_column.visible = True
-    dialog.props("persistent")
-
-
 def table_upload(table) -> None:
-    """
-    Handle the click event on the Upload button with improved UX.
-    """
-
-    ui.add_head_html(default_styles)
-
-    with ui.dialog() as dialog:
-        with ui.card().style("min-width: 400px; max-width: 90vw; padding: 32px;"):
-            with ui.column().classes("w-full items-center") as status_column:
-                ui.label("Uploading files").classes("text-h6 q-mb-sm")
-                status_label = ui.label("Please wait...").classes(
-                    "text-body1 q-mb-lg text-grey-7 upload-status"
-                ).style("width: 100%; text-align: center; overflow-wrap: anywhere;")
-                ui.spinner(size="50px", color="black").classes("upload-spinner")
-                status_column.visible = False
-
-            with ui.column().classes("w-full items-center mt-10") as upload_column:
-                upload = (
-                    ui.upload(
-                        label="hidden",
-                        on_multi_upload=lambda e: handle_upload_with_feedback(
-                            e, dialog, table, status_label
-                        ),
-                        auto_upload=True,
-                        multiple=True,
-                        max_files=5,
-                    )
-                    .props(
-                        "accept=.mp3,.wav,.flac,.mp4,.mkv,.avi,.m4a,.aiff,.aif,.mov,.ogg,.opus,.webm,.wma,.mpg,.mpeg"
-                    )
-                    .style(
-                        "position: absolute; width: 0; height: 0; overflow: hidden; opacity: 0"
-                    )
-                )
-
-                upload.on(
-                    "start",
-                    lambda _: toggle_upload_status(
-                        upload_column, status_column, dialog
-                    ),
-                )
-                upload.on(
-                    "finish",
-                    lambda _: status_label.set_text("Finishing upload, please wait..."),
-                )
-
-                def on_byte_progress(e):
-                    uploaded = e.args.get("uploaded", 0)
-                    total = e.args.get("total", 0)
-                    if total > 0:
-                        status_label.set_text(
-                            f"{format_size(uploaded)} / {format_size(total)}"
-                        )
-
-                upload.on("byte_progress", on_byte_progress)
-
-                dropzone = ui.html(
-                    """
-                    <div class="upload-dropzone w-96 h-40 flex items-center justify-center
-                                border-2 border-dashed rounded-2xl cursor-pointer">
-                        Drag & drop files here or click to upload.
-                        <br/><br/>
-                        5 files at a maximum of 4GB can be uploaded at once.
-                    </div>
-                    """,
-                    sanitize=False,
-                )
-
-                upload_id = upload.id
-                dropzone_id = dropzone.id
-                ui.timer(
-                    0.1,
-                    lambda: ui.run_javascript(
-                        "const dz = getHtmlElement(" + str(dropzone_id) + ");"
-                        "const upl = getElement(" + str(upload_id) + ");"
-                        "if (!dz || !upl) return;"
-                        "dz.addEventListener('click', () => upl.$refs.qRef.pickFiles());"
-                        "dz.addEventListener('dragover', e => {"
-                        "  e.preventDefault();"
-                        "  dz.querySelector('div').classList.add('dragover');"
-                        "});"
-                        "dz.addEventListener('dragleave', () => {"
-                        "  dz.querySelector('div').classList.remove('dragover');"
-                        "});"
-                        "dz.addEventListener('drop', e => {"
-                        "  e.preventDefault();"
-                        "  dz.querySelector('div').classList.remove('dragover');"
-                        "  upl.$refs.qRef.addFiles(Array.from(e.dataTransfer.files));"
-                        "});"
-                        "setInterval(() => {"
-                        "  const qRef = upl.$refs.qRef;"
-                        "  if (!qRef || !qRef.files || qRef.files.length === 0) return;"
-                        "  let totalSize = 0, uploaded = 0, currentFile = '';"
-                        "  qRef.files.forEach(f => {"
-                        "    totalSize += f.size || 0;"
-                        "    uploaded += f.__uploaded || 0;"
-                        "    if (f.__status === 'uploading') currentFile = f.name;"
-                        "  });"
-                        "  if (currentFile) {"
-                        "    getElement("
-                        + str(upload_id)
-                        + ").$emit('byte_progress', {"
-                        "      uploaded: uploaded, total: totalSize, current_file: currentFile"
-                        "    });"
-                        "  }"
-                        "}, 500);"
-                    ),
-                    once=True,
-                )
-                with ui.row().style("justify-content: flex-end; gap: 12px;"):
-                    with ui.button(
-                        "Cancel",
-                        icon="cancel",
-                        on_click=lambda: dialog.close(),
-                    ) as cancel:
-                        cancel.props("flat", remove="color")
-                        cancel.classes("cancel-style")
-
-        dialog.open()
-
-
-async def handle_upload_with_feedback(files, dialog, table, status_label):
-    """
-    Handle file uploads with user feedback and validation.
-
-    The NiceGUI upload progress only covers browser -> UI.
-    This function keeps the dialog open while the UI forwards the file to the backend.
-    """
-
-    client = ui.context.client
-
-    file_items = []
-    total = len(files.files)
-
-    for index, file in enumerate(files.files, 1):
-        file_name = sanitize_filename(file.name)
-
-        if not client._deleted:
-            status_label.set_text(
-                f"Saving file {index} of {total} locally: {file_name}"
-            )
-
-        temp_file = tempfile.NamedTemporaryFile(
-            delete=False,
-            prefix=UPLOAD_TEMP_PREFIX,
-            suffix=UPLOAD_TEMP_SUFFIX,
-        )
-        temp_path = temp_file.name
-        temp_file.close()
-
-        try:
-            await file.save(temp_path)
-
-            # Enforce the per-file size limit server-side; the client-side cap is
-            # advisory and can be bypassed.
-            if os.path.getsize(temp_path) > settings.MAX_UPLOAD_BYTES:
-                os.remove(temp_path)
-                if not client._deleted:
-                    with client:
-                        ui.notify(
-                            f"{file_name} exceeds the maximum allowed size",
-                            type="negative",
-                            timeout=5000,
-                        )
-                continue
-
-            file_items.append((file_name, temp_path))
-        except Exception:
-            if os.path.exists(temp_path):
-                os.remove(temp_path)
-            raise
-
-    async def _upload():
-        for index, (file_name, temp_path) in enumerate(file_items, 1):
-            try:
-                if not client._deleted:
-                    with client:
-                        status_label.set_text(
-                            f"Storing and encrypting file {index} of {total}: {file_name}"
-                        )
-
-                success = await post_file(temp_path, file_name)
-
-                if not client._deleted:
-                    with client:
-                        if success:
-                            ui.notify(
-                                f"Successfully uploaded {file_name}",
-                                type="positive",
-                                timeout=3000,
-                            )
-                        else:
-                            ui.notify(
-                                f"Error uploading {file_name}",
-                                type="negative",
-                                timeout=5000,
-                            )
-            except Exception as e:
-                if not client._deleted:
-                    with client:
-                        ui.notify(
-                            f"Error uploading {file_name}: {str(e)}",
-                            type="negative",
-                            timeout=5000,
-                        )
-            finally:
-                if os.path.exists(temp_path):
-                    os.remove(temp_path)
-
-        if not client._deleted:
-            rows = await jobs_get()
-            with client:
-                if rows or not table.rows:
-                    table.update_rows(rows, clear_selection=False)
-                dialog.close()
-
-    asyncio.create_task(_upload())
+    """The stable outer page owns the uploader across content navigation."""
+    ui.run_javascript("window.parent.postMessage('scribe:upload', window.location.origin)")
 
 
 def _default_transcription_language() -> str:
@@ -1886,7 +1590,7 @@ def table_bulk_transcribe(table: ui.table, on_complete=None) -> None:
             dialog.open()
 
 
-def table_delete(table: ui.table) -> None:
+def table_delete(table: ui.table, *, on_deleted=None) -> None:
     """
     Handle the click event on the Delete button.
     """
@@ -1904,22 +1608,32 @@ def table_delete(table: ui.table) -> None:
                 ui.button("Cancel", on_click=lambda: dialog.close()).props("color=black")
                 ui.button(
                     "Delete",
-                    on_click=lambda: __delete_files(table, dialog),
+                    on_click=lambda: __delete_files(table, dialog, on_deleted=on_deleted),
                 ).props("color=red")
 
         dialog.open()
 
 
-async def __delete_files(table: ui.table, dialog: ui.dialog) -> None:
+async def __delete_files(table: ui.table, dialog: ui.dialog, *, on_deleted=None) -> None:
     selected = list(table.selected)
     total = len(selected)
     dialog.close()
 
     deleted = 0
     failed = 0
+    deleted_ids = set()
 
     for row in selected:
         uuid = row["uuid"]
+        if row.get("local_upload"):
+            from utils.background_upload import owner_queue
+            uploads = owner_queue()
+            uploads[:] = [u for u in uploads if not (u.id == uuid and u.phase == "Failed")]
+            deleted_ids.add(uuid)
+            if on_deleted is not None:
+                on_deleted(uuid)
+            deleted += 1
+            continue
         try:
             async with httpx.AsyncClient(timeout=30) as client:
                 response = await client.delete(
@@ -1927,12 +1641,20 @@ async def __delete_files(table: ui.table, dialog: ui.dialog) -> None:
                     headers=get_auth_header(),
                 )
                 response.raise_for_status()
+            from utils.background_upload import owner_queue
+            uploads = owner_queue()
+            uploads[:] = [u for u in uploads if u.backend_id != uuid]
+            deleted_ids.add(uuid)
+            if on_deleted is not None:
+                on_deleted(uuid)
             deleted += 1
         except (httpx.HTTPStatusError, httpx.RequestError):
             failed += 1
 
     table.selected = []
-    table.update_rows(await jobs_get(), clear_selection=True)
+    # Keep successful deletions removed without replacing the page cache with
+    # a separate API snapshot. Failed deletions remain visible.
+    table.update_rows([r for r in table.rows if r["uuid"] not in deleted_ids], clear_selection=True)
 
     if failed == 0:
         ui.notify(

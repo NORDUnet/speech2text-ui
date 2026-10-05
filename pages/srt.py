@@ -16,6 +16,10 @@
 # limitations under the License.
 
 import json
+import logging
+from concurrent.futures import ThreadPoolExecutor
+from time import perf_counter
+
 import httpx
 
 from nicegui import app, ui
@@ -30,6 +34,8 @@ from utils.video import create_video_proxy
 create_video_proxy()
 
 settings = get_settings()
+
+logger = logging.getLogger("uvicorn.error")
 
 
 def save_srt(job_id: str, data: str, editor: SRTEditor, data_format: str) -> None:
@@ -73,89 +79,39 @@ def create() -> None:
         ui.add_head_html(
             f"<link rel='preload' as='video' href='/video/{uuid}' type='video/mp4'>"
         )
-        ui.add_head_html(
-            """
-        <script>
-        window.addEventListener('keydown', function(e) {
-            // Block Cmd + z / Ctrl + z for undo
-            if ((e.metaKey || e.ctrlKey) && ! e.shiftKey && e.key.toLowerCase() === 'z') {
-                e.preventDefault();
-            }
-
-            // Block Cmd + y / Ctrl + y for redo
-            if ((e.metaKey || e.ctrlKey) && ! e.shiftKey && e.key.toLowerCase() === 's') {
-                e.preventDefault();
-            }
-
-            // Block Cmd + Shift + z / Ctrl + Shift + z for redo
-            if ((e.metaKey || e.ctrlKey) && ! e.shiftKey && e.key.toLowerCase() === 'y') {
-                e.preventDefault();
-            }
-
-            // Block Cmd + Shift + z / Ctrl + Shift + z for redo
-            if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'z') {
-                e.preventDefault();
-            }
-
-            // Block Ctrl + f / Cmd + f for find
-            if ((e.metaKey || e.ctrlKey) && ! e.shiftKey && e.key.toLowerCase() === 'f') {
-                e.preventDefault();
-            }
-
-            // Block Ctrl + d / Cmd + d for bookmark
-            if ((e.metaKey || e.ctrlKey) && ! e.shiftKey && e.key.toLowerCase() === 'd') {
-                e.preventDefault();
-            }
-
-            // Block Ctrl + e / Cmd + e for search
-            if ((e.metaKey || e.ctrlKey) && ! e.shiftKey && e.key.toLowerCase() === 'e') {
-                e.preventDefault();
-            }
-
-            // Block Ctrl + Shift + m / Cmd + Shift + m for mute tab
-            if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'm') {
-                e.preventDefault();
-            }
-
-            // Handle Escape key globally (even when video player has focus)
-            if (e.key === 'Escape' && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey) {
-                // Blur active element
-                if (document.activeElement && typeof document.activeElement.blur === 'function') {
-                    document.activeElement.blur();
-                }
-                // Dispatch custom event that Python can listen to
-                window.dispatchEvent(new CustomEvent('escape-pressed'));
-            }
-        }, true);
-        </script>
-        """
-        )
         ui.add_head_html(default_styles)
-        ui.keyboard(on_key=editor.handle_key_event, ignore=[])
+        ui.add_head_html('<script src="/static/editor-shortcuts.js?v=2" defer></script>')
+        ui.on('editor-shortcut', editor.handle_shortcut)
 
+        # Resolve auth and password in the page's own context so the fetch
+        # helper is safe to run from a worker thread.
+        auth_headers = get_auth_header()
+        result_payload = {
+            "encryption_password": storage_decrypt(
+                app.storage.user.get("encryption_password"),
+            )
+        }
+
+        def fetch_result(output_format: str) -> httpx.Response:
+            return httpx.request(
+                "GET",
+                f"{settings.API_URL}/api/v1/transcriber/{uuid}/result/{output_format}",
+                headers=auth_headers,
+                json=result_payload,
+            )
+
+        fetch_started = perf_counter()
+        words_future = None
         try:
             if data_format == "srt":
-                response = httpx.request(
-                    "GET",
-                    f"{settings.API_URL}/api/v1/transcriber/{uuid}/result/srt",
-                    headers=get_auth_header(),
-                    json={
-                        "encryption_password": storage_decrypt(
-                            app.storage.user.get("encryption_password"),
-                        )
-                    },
-                )
+                # The subtitle text and the word-timing JSON are separate
+                # backend calls, each decrypting the full result; fetch them
+                # concurrently so the page only waits for the slower one.
+                with ThreadPoolExecutor(max_workers=1) as pool:
+                    words_future = pool.submit(fetch_result, "txt")
+                    response = fetch_result("srt")
             else:
-                response = httpx.request(
-                    "GET",
-                    f"{settings.API_URL}/api/v1/transcriber/{uuid}/result/txt",
-                    headers=get_auth_header(),
-                    json={
-                        "encryption_password": storage_decrypt(
-                            app.storage.user.get("encryption_password"),
-                        )
-                    },
-                )
+                response = fetch_result("txt")
 
             response.raise_for_status()
             data = response.json()
@@ -163,6 +119,169 @@ def create() -> None:
         except httpx.HTTPError as e:
             ui.notify(f"Error: Failed to get result: {e}")
             return
+
+        # Word-level timing payload: for txt jobs it is part of the result
+        # just fetched; subtitle jobs get it from the parallel fetch of
+        # their JSON result. Best-effort — jobs transcribed before word
+        # timestamps existed simply have none.
+        if words_future is not None:
+            try:
+                words_response = words_future.result()
+                words_response.raise_for_status()
+                editor.load_words(words_response.json().get("result"))
+            except httpx.HTTPError:
+                pass
+        else:
+            editor.load_words(data["result"])
+        fetch_seconds = perf_counter() - fetch_started
+
+        ui.add_head_html('<script src="/static/confidence-review.js?v=4" defer></script>')
+
+        # Click-to-seek on caption words: capture phase so a word click
+        # seeks the video without also selecting the caption card.
+        ui.add_head_html(
+            """
+            <style>
+            .w-confidence-review { outline: 2px solid #b7791f; outline-offset: 2px; border-radius: 3px; }
+            .w-seek { cursor: pointer; }
+            .w-seek:hover { text-decoration: underline; }
+            .w-lowconf { text-decoration: underline wavy #f59e0b; text-underline-offset: 3px; }
+            .w-lowconf:hover { text-decoration: underline wavy #f59e0b; }
+            .w-current { background-color: rgba(255, 193, 7, 0.45); border-radius: 3px; }
+            .caption-current { box-shadow: inset 4px 0 0 0 #f59e0b; }
+            </style>
+            <script>
+            document.addEventListener('click', function(e) {
+                const el = e.target.closest && e.target.closest('.w-seek');
+                if (!el || !el.dataset.s) return;
+                const video = document.querySelector('video');
+                if (video) {
+                    video.currentTime = parseFloat(el.dataset.s);
+                    e.stopPropagation();
+                    e.preventDefault();
+                }
+            }, true);
+
+            // Live subtitle preview: feed the editor's captions to a native
+            // TextTrack, using the browser's own subtitle renderer.
+            // One permanent preview track whose cues are managed directly
+            // via the TextTrack API. Loading VTT through blob URLs and
+            // swapping/removing <track> elements intermittently leaves
+            // orphaned cue boxes painted over the video.
+            window.__updateSubtitlePreview = function(cues, show, attempt) {
+                const video = document.querySelector('video');
+                if (!video) {
+                    // The video element may not be mounted yet right after
+                    // the client connects; retry briefly instead of losing
+                    // the initial preview push.
+                    if ((attempt || 0) < 20) {
+                        setTimeout(function() {
+                            window.__updateSubtitlePreview(cues, show, (attempt || 0) + 1);
+                        }, 250);
+                    }
+                    return;
+                }
+
+                // addTextTrack gives a script-owned TextTrack that accepts
+                // cues immediately — unlike a freshly created <track>
+                // element, whose cue list is not reliably usable right away.
+                if (!video.__previewTrack) {
+                    video.__previewTrack = video.addTextTrack('subtitles', 'Preview', '');
+                }
+                const track = video.__previewTrack;
+
+                track.mode = 'hidden';
+                while (track.cues && track.cues.length) {
+                    track.removeCue(track.cues[0]);
+                }
+
+                if (!show) {
+                    track.mode = 'disabled';
+                    return;
+                }
+
+                for (const cue of cues) {
+                    try {
+                        // Never extend a cue past the preview boundary.
+                        if (!Number.isFinite(cue.s) || !Number.isFinite(cue.e)
+                            || cue.e <= cue.s) continue;
+                        track.addCue(new VTTCue(cue.s, cue.e, cue.t));
+                    } catch (e) { /* skip malformed cue */ }
+                }
+                track.mode = 'showing';
+
+                // Rebuilding cues while one is on screen can leave a ghost
+                // cue box painted; re-assigning currentTime forces the
+                // browser to re-evaluate the active cues and repaint.
+                if (video.readyState > 0) {
+                    video.currentTime = video.currentTime;
+                }
+            };
+
+            // Follow mode ("Follow video" switch): mark the caption being
+            // spoken and keep it scrolled into view — without opening it
+            // for editing. Fully client-side; works with or without
+            // word-level data via data-s/data-e on the caption cards.
+            (function() {
+                let cache = null;
+                let lastCard = null;
+
+                new MutationObserver(function() { cache = null; }).observe(
+                    document.documentElement, { childList: true, subtree: true });
+
+                document.addEventListener('timeupdate', function(e) {
+                    if (!e.target || e.target.tagName !== 'VIDEO') return;
+                    if (!window.__followPlayback) {
+                        if (lastCard) {
+                            lastCard.classList.remove('caption-current');
+                            lastCard = null;
+                        }
+                        return;
+                    }
+
+                    if (!cache) {
+                        cache = Array.from(
+                            document.querySelectorAll('.caption-card[data-s]')
+                        ).map(function(el) {
+                            return {
+                                el: el,
+                                s: parseFloat(el.dataset.s),
+                                e: parseFloat(el.dataset.e || el.dataset.s),
+                            };
+                        }).sort(function(a, b) { return a.s - b.s; });
+                    }
+
+                    const t = e.target.currentTime;
+                    let lo = 0, hi = cache.length - 1, idx = -1;
+                    while (lo <= hi) {
+                        const mid = (lo + hi) >> 1;
+                        if (cache[mid].s <= t) { idx = mid; lo = mid + 1; }
+                        else { hi = mid - 1; }
+                    }
+
+                    let card = null;
+                    if (idx >= 0 && t < cache[idx].e + 0.5) card = cache[idx].el;
+
+                    if (card !== lastCard) {
+                        if (lastCard) lastCard.classList.remove('caption-current');
+                        if (card) {
+                            card.classList.add('caption-current');
+                            card.scrollIntoView({behavior: 'smooth', block: 'center'});
+                        }
+                        lastCard = card;
+                    }
+                }, true);
+            })();
+            </script>
+            """
+        )
+
+        # Karaoke follow-along only when the word times are trustworthy
+        # (DTW-aligned, or heuristic within short VAD speech segments):
+        # plain heuristic times drift within long segments, and a lagging
+        # highlight is worse than none.
+        if editor.karaoke_enabled():
+            ui.add_head_html('<script src="/static/karaoke.js" defer></script>')
 
         with ui.row().classes("justify-between w-full gap-2"):
             with ui.column().classes("flex-row items-center"):
@@ -196,31 +315,42 @@ def create() -> None:
                     "click", lambda: editor.show_export_dialog(filename)
                 )
 
-                if data_format == "srt":
-                    with ui.button("Validate", icon="check").props("flat", remove="color") as validate_button:
-                        validate_button.on(
-                            "click",
-                            lambda: editor.validate_captions(),
-                        )
-                editor.create_search_panel()
                 editor.show_keyboard_shortcuts()
             with ui.button("Close editor", icon="close").props("flat", remove="color") as close_button:
                 close_button.on("click", lambda: editor.close_editor("/home"))
 
+        ui.add_head_html('<link rel="stylesheet" href="/static/caption-cards.css?v=4">')
         with ui.splitter(value=60).classes("w-full h-full") as splitter:
             with splitter.before:
-                with ui.card().classes("w-full h-full"):
-                    with ui.scroll_area().style("height: calc(90vh - 100px);"):
-                        editor.main_container = ui.column().classes("w-full h-full")
+                with ui.card().classes(
+                    "w-full h-full caption-panel caption-style-minimal"
+                ):
+                    with ui.scroll_area().style("height: calc(90vh - 140px);"):
+                        editor.main_container = ui.column().classes("w-full h-full").props("id=subtitle-editor-captions")
 
+                    parse_started = perf_counter()
                     if data_format == "srt":
                         editor.parse_srt(data["result"])
                     else:
                         editor.parse_txt(data["result"])
 
+                    render_started = perf_counter()
                     editor.refresh_display()
+                    logger.info(
+                        "Editor open %s: fetch %.2fs, parse %.2fs, "
+                        "build captions %.2fs (%d captions, %d words)",
+                        uuid,
+                        fetch_seconds,
+                        render_started - parse_started,
+                        perf_counter() - render_started,
+                        len(editor.captions),
+                        len(editor.words),
+                    )
                 with splitter.after:
                     with ui.card().classes("w-full h-full"):
+                        ui.label(filename).classes("w-full text-base font-medium").style(
+                            "line-height: 1.4; overflow-wrap: anywhere;"
+                        )
                         video = ui.video(
                             f"/video/{uuid}",
                             controls=True,
@@ -228,42 +358,77 @@ def create() -> None:
                             loop=False,
                         ).classes("w-full h-full")
                         editor.set_video_player(video)
-                        video.props("preload='auto'")
-                        video.on(
-                            "timeupdate",
-                            lambda: editor.select_caption_from_video(),
-                        )
-                        autoscroll = ui.switch("Autoscroll")
-                        autoscroll.on(
-                            "click", lambda: editor.set_autoscroll(autoscroll.value)
-                        )
-                        with ui.column().classes("p-4 w-full").style(
-                            "background-color: var(--color-bg-surface-alt); border-radius: 4px;"
-                        ):
-                            ui.label(filename).classes("text-h6").style(
-                                "align-self: center;"
-                            )
-                            ui.html(
-                                f"<b>Transcription language:</b> {language}",
-                                sanitize=False,
-                            ).classes("text-sm")
-                            html_wpm = ui.html(
-                                f"<b>Words per minute:</b> {editor.get_words_per_minute():.2f}",
-                                sanitize=False,
-                            ).classes("text-sm")
-                            editor.set_words_per_minute_element(html_wpm)
-
-                if data_format == "txt":
-                    with splitter.after:
-                        with ui.card().classes("w-full h-full"):
-                            with ui.column().classes("p-4 w-full"):
-                                ui.label("Speakers").classes("text-h6").style(
-                                    "align-self: center;"
+                        video.props("preload='auto' id=subtitle-editor-video")
+                        with ui.row().classes("items-center gap-4"):
+                            with ui.switch("Follow video") as autoscroll:
+                                ui.tooltip(
+                                    "Scroll the current caption into view during "
+                                    "playback (click a caption to edit it)."
                                 )
-                                editor.render_speakers()
-                                with ui.button("Prune", on_click=editor.prune_speakers).props("outline color=black").classes("text-black prune-btn"):
-                                    ui.tooltip(
-                                        "Remove speakers that are not assigned "
-                                        "to any caption."
-                                    )
-                    
+                            autoscroll.on(
+                                "click",
+                                lambda: editor.set_autoscroll(autoscroll.value),
+                            )
+
+                            with ui.switch(
+                                "Preview subtitles", value=editor.subtitle_preview
+                            ) as subtitle_preview_switch:
+                                ui.tooltip(
+                                    "Show the captions on the video the way a "
+                                    "player would render them — including "
+                                    "unsaved edits."
+                                )
+                            subtitle_preview_switch.on(
+                                "click",
+                                lambda: editor.set_subtitle_preview(
+                                    subtitle_preview_switch.value
+                                ),
+                            )
+
+                            with ui.tabs().props("dense no-caps inline-label").classes("text-inherit") as editor_tools:
+                                if editor.words:
+                                    ui.tab("review", label="Review words", icon="spellcheck")
+                                if data_format == "txt":
+                                    ui.tab("speakers", label="Speakers", icon="people_outline")
+                                ui.tab("search", label="Find & replace", icon="search")
+                            editor.tool_tabs = editor_tools
+
+                            def switch_editor_tool(event):
+                                if event.value != "review" and editor._confidence_review_id is not None:
+                                    editor.end_confidence_review()
+                                if event.value != "search":
+                                    editor.clear_search()
+                                elif editor._search_input is not None and editor._search_input.value:
+                                    editor.search_captions(editor._search_input.value)
+
+                            editor_tools.on_value_change(switch_editor_tool)
+
+                        # Apply a persisted preview preference. The push must
+                        # wait for the websocket connection — a fixed delay
+                        # can fire before the client is connected on large
+                        # jobs, and the run_javascript is then lost.
+                        if editor.subtitle_preview:
+
+                            async def apply_initial_preview() -> None:
+                                await ui.context.client.connected()
+                                editor.refresh_subtitle_preview(force=True)
+
+                            ui.timer(0.1, apply_initial_preview, once=True)
+                        with ui.tab_panels(
+                            editor_tools,
+                            value="review" if editor.words else ("speakers" if data_format == "txt" else "search"),
+                            animated=False,
+                            keep_alive=True,
+                        ).classes("w-full bg-transparent"):
+                            if editor.words:
+                                with ui.tab_panel("review").classes("p-0"):
+                                    editor.create_confidence_workspace()
+                            if data_format == "txt":
+                                with ui.tab_panel("speakers").classes("p-0"):
+                                    with ui.column().classes("w-full confidence-workspace"):
+                                        ui.label("Speakers").classes("text-sm font-semibold")
+                                        editor.render_speakers()
+                                        with ui.button("Remove unused speakers", icon="person_remove", on_click=editor.prune_speakers).props("flat no-caps", remove="color"):
+                                            ui.tooltip("Remove speakers that are not assigned to any caption.")
+                            with ui.tab_panel("search").classes("p-0"):
+                                editor.create_search_panel()

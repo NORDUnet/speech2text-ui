@@ -15,7 +15,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from time import monotonic
 from nicegui import ui, events
+from utils.background_upload import owner_queue
+from utils.upload_state import merge_rows
+from utils.file_selection import file_key, current_selection
 from utils.common import (
     default_styles,
     page_init,
@@ -24,9 +28,7 @@ from utils.common import (
     table_click,
     table_upload,
     table_delete,
-    table_transcribe,
     table_bulk_export,
-    table_bulk_transcribe,
 )
 
 
@@ -37,6 +39,9 @@ def create() -> None:
         """
         Main page of the application.
         """
+        ui.add_head_html("""<script>
+            if (window.top === window.self) location.replace('/workspace?view=' + encodeURIComponent(location.pathname + location.search));
+        </script>""")
         page_init(use_drawer=True)
 
         def toggle_buttons(selected: list) -> None:
@@ -44,7 +49,7 @@ def create() -> None:
             Toggle the state of buttons based on selected rows.
             """
             has_selection = bool(selected)
-            delete.set_enabled(has_selection)
+            delete.set_enabled(has_selection and all(r.get("status") != "Uploading" and (not r.get("local_upload") or r.get("status") == "Failed") for r in selected))
 
             # Update delete tooltip
             if has_selection:
@@ -67,25 +72,14 @@ def create() -> None:
             else:
                 export_tooltip.text = "Select one or more already completed files to export"
 
-            # Enable bulk transcribe when 1+ uploaded jobs are selected
-            uploaded = [r for r in selected if r.get("status") == "Uploaded"]
-            already_transcribed = [r for r in selected if r.get("status") == "Completed"]
-            bulk_transcribe.set_enabled(len(uploaded) >= 1)
-
-            # Update transcribe tooltip
-            if not has_selection:
-                transcribe_tooltip.text = "Select one or more files to transcribe"
-            elif len(uploaded) >= 1 and len(already_transcribed) > 0:
-                transcribe_tooltip.text = "One or more files are already transcribed"
-            elif len(uploaded) >= 1:
-                transcribe_tooltip.text = "Transcribe selected files"
-            elif len(already_transcribed) > 0:
-                transcribe_tooltip.text = "One or more files are already transcribed"
-            else:
-                transcribe_tooltip.text = "Select one or more files to transcribe"
+        def selection_changed(event):
+            # Events can contain row snapshots from before the latest status update.
+            table.selected = current_selection(table.rows, event.selection)
+            toggle_buttons(table.selected)
 
         table = ui.table(
-            on_select=lambda e: toggle_buttons(e.selection),
+            on_select=selection_changed,
+            row_key="selection_key",
             columns=jobs_columns,
             rows=[],
             selection="multiple",
@@ -94,7 +88,8 @@ def create() -> None:
         table.props(":selected-rows-label=\"(n) => n + ' files selected'\"")
         # Don't show Quasar's "No data available" bottom layer — an empty list is
         # the expected state before a user uploads anything.
-        table.props("hide-no-data")
+        table.props("hide-no-data flat separator=horizontal")
+        ui.add_head_html('<link rel="stylesheet" href="/static/files-table.css?v=3">')
 
         # Custom header checkbox that selects/deselects ALL rows across all pages
         table.add_slot(
@@ -102,7 +97,7 @@ def create() -> None:
             """
             <q-checkbox
                 :model-value="props.selected"
-                @update:model-value="val => { if (!val) { $parent.$emit('deselect_all'); } else { props.selected = true; } }"
+                @update:model-value="val => { if (!val) { $parent.$emit('deselect_all'); } else { $parent.$emit('select_all'); } }"
             />
             """,
         )
@@ -111,36 +106,56 @@ def create() -> None:
             table.selected = []
             toggle_buttons([])
 
+        def select_all():
+            table.selected = list(table.rows)
+            toggle_buttons(table.selected)
+
+        table.on("select_all", select_all)
         table.on("deselect_all", deselect_all)
 
         def table_handle_row_click(e: events.GenericEventArguments) -> None:
             if e.args.get("status") == "Completed":
                 table_click(e)
-            else:
-                table_transcribe(e.args, on_complete=lambda: ui.timer(0.1, update_rows, once=True))
 
         ui.add_head_html(default_styles)
 
         table.style(
-            "width: 100%; height: calc(100vh - 100px - var(--banner-offset, 0px)); box-shadow: none; font-size: 18px;"
+            "width: 100%; height: calc(100vh - 100px - var(--banner-offset, 0px)); box-shadow: none;"
         )
-        table.classes("table-style")
+        table.classes("files-table")
         table.add_slot(
             "body-cell-status",
             """
             <q-td key="status" :props="props">
-                <p>{{ props.value }}</p>
+                <div class="file-status" :class="{'file-status-failed': props.value === 'Failed'}">
+                    <span class="file-status-dot" aria-hidden="true"></span>
+                    <span>{{ props.value }}</span>
+                    <q-icon v-if="props.row.upload_error" name="info_outline" size="16px" tabindex="0" aria-label="Failure details">
+                        <q-tooltip max-width="min(360px, calc(100vw - 32px))" style="white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.4;">{{ props.row.upload_error }}</q-tooltip>
+                    </q-icon>
+                </div>
+                <div v-if="props.row.upload_progress" class="file-progress">{{ props.row.upload_progress }}</div>
             </q-td>
+            """,
+        )
+        table.add_slot(
+            "body-cell-action",
+            """
             <q-td key="action" :props="props">
-                <q-btn
-                    v-if="props.row.status === 'Uploaded' || props.row.status === 'Completed'"
-                    :label="props.row.status === 'Completed' ? 'Edit' : 'Transcribe'"
-                    color="black"
-                    text-color="white"
-                    class="row-action-btn"
-                    style="width: 120px; height: 40px;"
-                    @click="$parent.$emit('table_handle_row_click', props.row)"
+                <q-btn v-if="props.row.status === 'Completed'"
+                    label="Edit" icon="edit" flat no-caps dense
+                    class="file-edit-button"
+                    :aria-label="'Edit ' + props.row.filename"
+                    @click.stop="$parent.$emit('table_handle_row_click', props.row)"
                 />
+            </q-td>
+            """,
+        )
+        table.add_slot(
+            "body-cell-filename",
+            """
+            <q-td key="filename" :props="props">
+                <span class="file-name">{{ props.value }}<q-tooltip>{{ props.value }}</q-tooltip></span>
             </q-td>
             """,
         )
@@ -164,54 +179,74 @@ def create() -> None:
         table.on("table_handle_row_click", table_handle_row_click)
 
         with table.add_slot("top-left"):
-            ui.label("My files").classes("text-3xl font-bold")
+            ui.label("My files").classes("files-title")
 
         with table.add_slot("top-right"):
-            with ui.row().classes("items-center"):
+            with ui.row().classes("items-center files-actions"):
                 with ui.button("Delete", icon="delete") as delete:
-                    delete.props("flat", remove="color")
-                    delete.classes("delete-style")
-                    delete.on("click", lambda: table_delete(table))
+                    delete.props("flat no-caps", remove="color")
+                    delete.classes("file-toolbar-button")
+                    delete.on("click", lambda: table_delete(table, on_deleted=forget_deleted))
                     delete.set_enabled(False)
                     delete_tooltip = ui.tooltip("Select one or more files to delete")
 
                 with ui.button("Export", icon="download") as bulk_export:
-                    bulk_export.props("flat", remove="color")
-                    bulk_export.classes("default-style")
+                    bulk_export.props("flat no-caps", remove="color")
+                    bulk_export.classes("file-toolbar-button")
                     bulk_export.on("click", lambda: table_bulk_export(table))
                     bulk_export.set_enabled(False)
                     export_tooltip = ui.tooltip("Select one or more files to export")
 
-                with ui.button("Transcribe", icon="rtt") as bulk_transcribe:
-                    bulk_transcribe.props("flat", remove="color")
-                    bulk_transcribe.classes("default-style")
-                    bulk_transcribe.on("click", lambda: table_bulk_transcribe(table, on_complete=lambda: ui.timer(0.1, update_rows, once=True)))
-                    bulk_transcribe.set_enabled(False)
-                    transcribe_tooltip = ui.tooltip(
-                        "Select one or more files to transcribe"
-                    )
-
                 with ui.button("Upload", icon="upload") as upload:
-                    upload.props("flat", remove="color")
-                    upload.classes("default-style")
+                    upload.props("flat no-caps", remove="color")
+                    upload.classes("file-toolbar-button file-upload-button")
                     upload.on("click", lambda: table_upload(table))
 
-        async def update_rows():
+        backend_rows = []
+        last_fetch = None
+        deleted_ids = set()
+
+        def forget_deleted(uuid):
+            nonlocal backend_rows
+            deleted_ids.add(uuid)
+            backend_rows = [r for r in backend_rows if r["uuid"] != uuid]
+            table.selected = [r for r in table.selected if r["uuid"] != uuid]
+            table.update_rows([r for r in table.rows if r["uuid"] != uuid], clear_selection=False)
+            toggle_buttons(table.selected)
+
+
+        async def update_rows(force=True):
             """
             Update the rows in the table.
 
             Avoid clearing the existing table during temporary backend/API failures.
             This can happen while large uploads are being stored and encrypted.
             """
-            rows = await jobs_get()
+            nonlocal backend_rows, last_fetch
+            uploads = owner_queue()
+            active = bool(uploads) or any(r['status'].lower() in ('transcribing', 'queued', 'uploading') for r in backend_rows)
+            interval = 5.0 if active else 30.0
+            if force or last_fetch is None or monotonic() - last_fetch >= interval:
+                fetched = await jobs_get(include_uploads=False)
+                last_fetch = monotonic()
+                if fetched is not None:
+                    backend_rows = [r for r in fetched if r["uuid"] not in deleted_ids]
+            rows = [r for r in merge_rows(backend_rows, uploads) if r["uuid"] not in deleted_ids]
 
-            if not rows and table.rows:
+            for row in rows:
+                row["selection_key"] = file_key(row)
+            # Preserve file identity, but replace stale status/permission snapshots.
+            table.selected = current_selection(rows, table.selected)
+            toggle_buttons(table.selected)
+
+            # Replacing identical rows rebuilds hovered tooltips every tick.
+            # Keep browser elements intact until displayed data changes.
+            if rows == table.rows:
                 return
 
             if not rows:
                 delete.set_enabled(False)
                 bulk_export.set_enabled(False)
-                bulk_transcribe.set_enabled(False)
 
             # Keep selection enabled even when empty: toggling to "none" and back
             # does not reliably re-render the per-row checkboxes without a page
@@ -219,19 +254,7 @@ def create() -> None:
             table.selection = "multiple"
             table.update_rows(rows, clear_selection=False)
 
-            has_active = any(
-                r["status"].lower() in ("transcribing", "queued", "uploading")
-                for r in rows
-            )
-            poll_timer.interval = 5.0 if has_active else 30.0
-
-        async def initial_load():
-            rows = await jobs_get()
-            table.rows = rows
-            # Keep selection enabled even when empty: toggling to "none" and back
-            # does not reliably re-render the per-row checkboxes without a page
-            # reload, so newly uploaded files would appear without selection boxes.
-            table.selection = "multiple"
-
-        poll_timer = ui.timer(30.0, update_rows)
-        ui.timer(0.0, initial_load, once=True)
+        # Local progress is cheap and refreshed each second. The expensive API
+        # listing (including filename decryption) retains the original cadence.
+        ui.timer(1.0, lambda: update_rows(force=False))
+        ui.timer(0.0, update_rows, once=True)

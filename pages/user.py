@@ -55,7 +55,9 @@ def create() -> None:
         """
         User page for managing user settings and information.
         """
-        page_init(use_drawer=True)
+        appearance_dark = page_init(use_drawer=True)
+        if appearance_dark is None:
+            return
         userdata = get_user_data()
 
         ui.add_head_html(default_styles)
@@ -163,16 +165,6 @@ def create() -> None:
         ui.label("Appearance").classes("text-lg font-semibold mb-2")
         ui.separator()
 
-        appearance_dark = ui.dark_mode(app.storage.user.get("dark_mode", None))
-        raw_dark = app.storage.user.get("dark_mode", None)
-        current_dark = "auto" if raw_dark is None else ("dark" if raw_dark else "light")
-
-        def set_dark_mode(value: str) -> None:
-            # "auto" -> None (follow system), "dark" -> True, "light" -> False
-            new_val = None if value == "auto" else (value == "dark")
-            app.storage.user["dark_mode"] = new_val
-            appearance_dark.value = new_val
-
         with ui.column().classes("gap-2 mt-2 mb-6"):
             ui.label(
                 "Colour theme. Auto follows your system setting."
@@ -181,9 +173,12 @@ def create() -> None:
                 ui.icon("contrast", color="black").style("font-size: 20px;")
                 ui.toggle(
                     {"light": "Light", "dark": "Dark", "auto": "Auto"},
-                    value=current_dark,
-                    on_change=lambda e: set_dark_mode(e.value),
-                ).props("no-caps")
+                    value="auto",
+                ).props("no-caps").bind_value(
+                    appearance_dark, "value",
+                    forward=lambda value: None if value == "auto" else value == "dark",
+                    backward=lambda value: "auto" if value is None else ("dark" if value else "light"),
+                )
 
         # -- Notifications section --
         ui.label("Notifications").classes("text-lg font-semibold mb-2")

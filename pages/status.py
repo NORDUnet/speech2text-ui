@@ -39,8 +39,8 @@ def create() -> None:
                     margin-bottom: 16px;
                 }
                 .status-ok {
-                    background-color: #e8f5e9;
-                    border-left: 4px solid #4caf50;
+                    background-color: #eef5fc;
+                    border-left: 4px solid #005eb8;
                 }
                 .status-error {
                     background-color: #ffebee;
@@ -59,7 +59,7 @@ def create() -> None:
 
             with ui.column().style("width: 100%; max-width: 600px;"):
                 with ui.row().classes("status-card status-ok items-center w-full"):
-                    ui.icon("check_circle", color="green").classes("status-icon")
+                    ui.icon("check_circle", color="positive").classes("status-icon")
                     with ui.column():
                         ui.label("Frontend").classes("text-h6")
                         ui.label("Working").classes("text-body2 text-grey-7")
@@ -109,7 +109,7 @@ def create() -> None:
 
                         if data.get("backend") == "ok":
                             backend_card.classes(remove="status-error", add="status-ok")
-                            backend_icon.props("name=check_circle color=green")
+                            backend_icon.props("name=check_circle color=positive")
                             backend_status.set_text("Working")
                         else:
                             backend_card.classes(remove="status-ok", add="status-error")
@@ -120,7 +120,7 @@ def create() -> None:
                             database_card.classes(
                                 remove="status-error", add="status-ok"
                             )
-                            database_icon.props("name=check_circle color=green")
+                            database_icon.props("name=check_circle color=positive")
                             database_status.set_text("Working")
                         else:
                             database_card.classes(
@@ -133,7 +133,7 @@ def create() -> None:
 
                         if data.get("workers") == "ok":
                             workers_card.classes(remove="status-error", add="status-ok")
-                            workers_icon.props("name=check_circle color=green")
+                            workers_icon.props("name=check_circle color=positive")
                             workers_status.set_text(
                                 f"{workers_online} worker(s) online"
                             )
