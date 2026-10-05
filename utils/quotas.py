@@ -2,11 +2,7 @@
 from decimal import Decimal, InvalidOperation
 
 import httpx
-<<<<<<< Updated upstream
-from nicegui import ui
-=======
 from nicegui import background_tasks, ui
->>>>>>> Stashed changes
 from utils.common import page_init, default_styles
 from utils.settings import get_settings
 from utils.token import get_admin_status, get_auth_header, get_bofh_status
@@ -79,37 +75,25 @@ def edit_quota(pool, refresh):
 
 def quota_statistics(manage=False):
     """Can be embedded in existing admin statistics as well as the quota page."""
-<<<<<<< Updated upstream
-    with ui.column().classes("w-full"):
-=======
     with ui.column().classes("w-full") as overview:
->>>>>>> Stashed changes
         ui.label("Shared monthly transcription quotas").classes("text-h5")
         ui.label("UTC calendar month · shared across the listed realms · REACH excluded").classes("text-sm")
 
         @ui.refreshable
         async def contents():
-<<<<<<< Updated upstream
-=======
             container = ui.context.slot.parent
->>>>>>> Stashed changes
             try:
                 async with httpx.AsyncClient(timeout=30) as client:
                     response = await client.get(f"{settings.API_URL}/api/v1/admin/quotas", headers=get_auth_header())
                     response.raise_for_status()
                 pools = response.json()["result"]
             except (httpx.HTTPError, ValueError, KeyError):
-<<<<<<< Updated upstream
-                ui.label("Unable to load quota usage. Use Refresh to try again.").classes("text-negative")
-                return
-=======
                 if container.is_deleted:
                     return
                 ui.label("Unable to load quota usage. Use Refresh to try again.").classes("text-negative")
                 return
             if container.is_deleted:
                 return
->>>>>>> Stashed changes
             if not pools:
                 ui.label("No shared quotas assigned.")
             for pool in pools:
@@ -137,9 +121,6 @@ def quota_statistics(manage=False):
             ui.button("Refresh", on_click=contents.refresh).props("flat")
             if manage and get_bofh_status():
                 ui.button("Create quota", on_click=lambda: edit_quota(None, contents.refresh))
-<<<<<<< Updated upstream
-        ui.timer(0.01, contents, once=True)
-=======
         async def load_initial():
             # A surrounding refresh or navigation can delete this view before loading starts.
             if not overview.is_deleted:
@@ -147,7 +128,6 @@ def quota_statistics(manage=False):
                     await contents()
 
         background_tasks.create(load_initial(), name="load quota overview")
->>>>>>> Stashed changes
 
 
 @ui.page("/admin/quotas")
