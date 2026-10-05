@@ -130,10 +130,8 @@ def create() -> None:
                 <div class="file-status" :class="{'file-status-failed': props.value === 'Failed'}">
                     <span class="file-status-dot" aria-hidden="true"></span>
                     <span>{{ props.value }}</span>
-                    <q-icon v-if="props.row.upload_error" name="info_outline" size="16px" tabindex="0" aria-label="Failure details">
-                        <q-tooltip max-width="min(360px, calc(100vw - 32px))" style="white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.4;">{{ props.row.upload_error }}</q-tooltip>
-                    </q-icon>
                 </div>
+                <div v-if="props.row.upload_error" role="status" style="white-space: pre-wrap; overflow-wrap: anywhere; max-width: 360px; font-size: 12px; line-height: 1.4; margin-top: 4px;">{{ props.row.upload_error }}</div>
                 <div v-if="props.row.upload_progress" class="file-progress">{{ props.row.upload_progress }}</div>
             </q-td>
             """,

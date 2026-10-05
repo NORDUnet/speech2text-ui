@@ -105,3 +105,20 @@ scribe-ui/
 ├── static/             # Static assets
 └── tests/              # Test files
 ```
+
+## Shared quota administration
+
+**Admin → Shared quotas** shows the current UTC month's completed hours,
+queued/in-progress hours, remaining capacity, and the shared limit. The same
+statistics appear on the group statistics page. Use **Refresh** to update usage.
+
+Only BOFH users see **Create quota** and **Edit**; the backend also enforces this
+permission. Enter a limit in hours and the comma-separated realms sharing it.
+Use **Unlimited** for no cap; zero hours blocks new submissions. Each realm can
+belong to only one quota. Remove a realm from its old pool before assigning it to
+another. Jobs already submitted keep their original pool and month.
+
+Limit edits apply immediately to the current month and remain the default for
+future months. Existing reservations continue if a limit is reduced. REACH jobs
+are excluded. Ordinary admins can view the pools for the realms they administer,
+but cannot edit them.

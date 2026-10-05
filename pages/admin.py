@@ -73,6 +73,7 @@ from utils.token import (
 )
 from utils.group import Group
 from utils.customer import Customer
+from utils.quotas import quota_statistics
 
 
 settings = get_settings()
@@ -393,6 +394,7 @@ def statistics(group_id: str) -> None:
         job["created_at"] = add_timezone_to_timestamp(job["created_at"])
 
     ui.label("Group statistics").classes("text-3xl font-bold mb-4")
+    quota_statistics()
 
     with ui.element("div").classes("stats-container w-full"):
         with ui.element("div").classes("stats-card w-full"):
