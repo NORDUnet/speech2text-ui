@@ -1,3 +1,7 @@
+<<<<<<< Updated upstream
+=======
+import asyncio
+>>>>>>> Stashed changes
 from types import SimpleNamespace
 
 import httpx
@@ -48,3 +52,57 @@ async def test_quota_dashboard_permissions_and_editing(monkeypatch, bofh):
             user.find("Save").click()
             await user.should_see("Quota saved")
             assert writes == [{"name": "Shared", "quota_seconds": 7200, "realms": ["a.example", "b.example"]}]
+<<<<<<< Updated upstream
+=======
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stage", ["before_load", "success", "error"])
+async def test_deleted_quota_overview_stops_loading(monkeypatch, stage):
+    started = asyncio.Event()
+    release = asyncio.Event()
+    loads = []
+    create_task = quotas.background_tasks.create
+
+    def track_task(coroutine, **kwargs):
+        task = create_task(coroutine, **kwargs)
+        if kwargs.get("name") == "load quota overview":
+            loads.append(task)
+        return task
+
+    class Client:
+        def __init__(self, **kwargs):
+            pass
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, *args):
+            pass
+        async def get(self, url, **kwargs):
+            started.set()
+            await release.wait()
+            return httpx.Response(503 if stage == "error" else 200,
+                                  json={"result": []}, request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(quotas.background_tasks, "create", track_task)
+    monkeypatch.setattr(quotas, "httpx", SimpleNamespace(AsyncClient=Client, HTTPError=httpx.HTTPError))
+    monkeypatch.setattr(quotas, "get_auth_header", lambda: {})
+    async with user_simulation() as user:
+        @ui.page("/test-deleted-quotas")
+        def test_page():
+            nonlocal parent
+            with ui.column() as parent:
+                quotas.quota_statistics()
+            if stage == "before_load":
+                parent.clear()
+
+        parent = None
+        await user.open("/test-deleted-quotas")
+        if stage != "before_load":
+            await asyncio.wait_for(started.wait(), timeout=1)
+            parent.clear()
+            release.set()
+        await asyncio.wait_for(asyncio.gather(*loads), timeout=1)
+        assert started.is_set() == (stage != "before_load")
+        await user.should_not_see("No shared quotas assigned.")
+        await user.should_not_see("Unable to load quota usage. Use Refresh to try again.")
+>>>>>>> Stashed changes
