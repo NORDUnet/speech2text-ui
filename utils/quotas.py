@@ -108,11 +108,18 @@ def quota_statistics(manage=False):
                     with ui.row().classes("gap-8"):
                         ui.label(f"Completed: {pool['used_seconds'] / 3600:,.3f} hours")
                         ui.label(f"Queued / in progress: {pool['reserved_seconds'] / 3600:,.3f} hours")
-                        ui.label("Remaining: " + ("Unlimited" if limit is None else f"{pool['remaining_seconds'] / 3600:,.3f} hours"))
+                        if limit is None:
+                            ui.label("Remaining: Unlimited")
+                        else:
+                            hours, minutes = divmod(int(pool['remaining_seconds']) // 60, 60)
+                            ui.label(f"Remaining: {hours}h {minutes:02d}m")
                     if limit is not None:
                         total = pool["used_seconds"] + pool["reserved_seconds"]
                         ratio = total / limit if limit else 1
-                        ui.linear_progress(value=min(ratio, 1), color="negative" if ratio >= 1 else "primary").classes("w-full")
+                        with ui.linear_progress(value=min(ratio, 1), show_value=False, size="20px",
+                                                color="negative" if ratio >= 1 else "primary").classes("w-full") as progress:
+                            ui.label().classes("absolute-center text-sm text-white").bind_text_from(
+                                progress, "value", backward=lambda value: f"{value:.0%}")
                         if total >= limit:
                             ui.label("No capacity for additional reservations.").classes("text-negative")
                     ui.label(f"Month: {pool['period_start'][:7]} · Resets: {pool['resets_at'][:10]} 00:00 UTC").classes("text-sm")
