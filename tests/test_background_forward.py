@@ -15,6 +15,47 @@ from utils import background_upload as bg
 from utils.upload_state import Upload
 
 class ForwardTests(unittest.IsolatedAsyncioTestCase):
+    async def test_exhausted_quota_prevents_browser_upload(self):
+        client_class = httpx.AsyncClient
+        async def handle(request):
+            self.assertEqual(request.headers['Authorization'], 'Bearer fixture')
+            return httpx.Response(200, json={'result': {'allowed': False, 'error': 'Quota exhausted.'}})
+        with patch.object(bg.httpx, 'AsyncClient', lambda **kw: client_class(transport=httpx.MockTransport(handle), **kw)), \
+             patch.object(bg.ui, 'notify') as notify:
+            allowed = await bg.can_start_browser_upload({'Authorization': 'Bearer fixture'})
+        self.assertFalse(allowed)
+        notify.assert_called_once_with('Quota exhausted.', type='negative')
+
+    async def test_available_quota_allows_browser_upload(self):
+        client_class = httpx.AsyncClient
+        transport = httpx.MockTransport(lambda request: httpx.Response(200, json={'result': {'allowed': True, 'error': ''}}))
+        with patch.object(bg.httpx, 'AsyncClient', lambda **kw: client_class(transport=transport, **kw)), \
+             patch.object(bg.ui, 'notify') as notify:
+            self.assertTrue(await bg.can_start_browser_upload({}))
+        notify.assert_not_called()
+
+    async def test_quota_service_failure_prevents_browser_upload_with_retry_message(self):
+        client_class = httpx.AsyncClient
+        transport = httpx.MockTransport(lambda request: httpx.Response(503))
+        with patch.object(bg.httpx, 'AsyncClient', lambda **kw: client_class(transport=transport, **kw)), \
+             patch.object(bg.ui, 'notify') as notify:
+            self.assertFalse(await bg.can_start_browser_upload({}))
+        notify.assert_called_once_with('Unable to check your quota. Please try again.', type='negative')
+
+    async def test_stream_quota_refusal_preserves_reason_and_never_submits(self):
+        upload = Upload('meeting.mp4', 7, received=True)
+        source = SmallFileUpload('meeting.mp4', 'video/mp4', b'example')
+        client_class = httpx.AsyncClient
+        transport = httpx.MockTransport(lambda request: httpx.Response(403, json={'result': {'error': 'Quota exhausted.'}}))
+        with patch.object(bg.httpx, 'AsyncClient', lambda **kw: client_class(transport=transport, **kw)), \
+             patch.object(bg, 'submit_upload', AsyncMock()) as submit, \
+             patch.object(bg, 'finalize_failure', AsyncMock()), patch.object(bg, 'show_upload_failure') as show:
+            await bg.forward_file(upload, source, {}, on_failure=show)
+        self.assertEqual(upload.phase, 'Failed')
+        self.assertEqual(upload.error, 'Quota exhausted.')
+        submit.assert_not_awaited()
+        show.assert_called_once_with(upload)
+
     async def forward(self, status):
         upload = Upload('test.mp4', 7, received=True, options={'language': 'English', 'output_format': 'Subtitles', 'speakers': 2, 'verbatim': False})
         storage = {}
