@@ -118,6 +118,17 @@ async def forward_file(upload, file: ui.upload.FileUpload, headers, user_storage
         upload.phase = 'Failed'
         upload.error = 'File transfer was interrupted. Please upload it again.'
         raise
+    except httpx.HTTPStatusError as error:
+        upload.phase = 'Failed'
+        upload.error = 'Could not store this file. Please upload it again.'
+        if error.response.status_code == 403:
+            upload.error = 'Transcription was refused. Check your quota or sign in again, then upload the file again.'
+            try:
+                reason = error.response.json().get('result', {}).get('error')
+                if isinstance(reason, str) and reason.strip():
+                    upload.error = reason
+            except (ValueError, AttributeError):
+                pass
     except Exception:
         upload.phase = 'Failed'
         upload.error = 'Could not store this file. Please upload it again.'
@@ -131,6 +142,47 @@ async def forward_file(upload, file: ui.upload.FileUpload, headers, user_storage
         await submit_upload(upload, headers, user_storage)
     if upload.phase == 'Failed' and on_failure is not None:
         on_failure(upload)
+
+
+async def can_start_browser_upload(headers):
+    """Check existing quota once, before starting the browser transfer."""
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            response = await client.get(settings.API_URL + '/api/v1/transcriber/upload-quota', headers=headers)
+            response.raise_for_status()
+            result = response.json()['result']
+        if result['allowed'] is False:
+            ui.notify(result['error'] or 'Transcription quota exceeded. Contact your administrator, then upload the file again.', type='negative')
+            return False
+        return True
+    except (httpx.HTTPError, ValueError, KeyError):
+        ui.notify('Unable to check your quota. Please try again.', type='negative')
+        return False
+
+
+async def refresh_upload_quota(label, headers):
+    """Refresh available shared transcription time when the dialog opens."""
+    label.set_text('')
+    label.set_visibility(False)
+    label.classes(remove='text-negative')
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            response = await client.get(settings.API_URL + '/api/v1/transcriber/upload-quota', headers=headers)
+            response.raise_for_status()
+            remaining = response.json()['result']['remaining_seconds']
+        if label.is_deleted:
+            return
+        if remaining is None:
+            return
+        hours, minutes = divmod(int(remaining) // 60, 60)
+        label.set_text(f'Remaining quota: {hours}h {minutes:02d}m')
+        label.set_visibility(True)
+        if remaining < 5 * 3600:
+            label.classes(add='text-negative')
+    except (httpx.HTTPError, ValueError, KeyError):
+        if not label.is_deleted:
+            label.set_text('Remaining quota: Unavailable')
+            label.set_visibility(True)
 
 
 def show_upload_failure(upload):
@@ -175,9 +227,11 @@ def register():
                     max_size /= 1024
                 upload_limits = f'Choose up to 5 files, each no larger than {max_size:g} {size_unit}.'
                 ui.label(upload_limits + ' Each file will be transcribed automatically after uploading.').classes('text-sm')
+                quota_remaining = ui.label().classes('text-sm')
+                quota_remaining.set_visibility(False)
 
                 async def receive(event):
-                    item = next((u for u in batch if not u.received and u.filename == sanitize_filename(event.file.name)), None)
+                    item = next((u for u in batch if not u.received and u.phase == 'Uploading' and u.filename == sanitize_filename(event.file.name)), None)
                     if item is None:
                         return
                     received_at = perf_counter()
@@ -281,6 +335,8 @@ def register():
                         if len(files) > 5 or any(not 0 <= int(f['size']) <= settings.MAX_UPLOAD_BYTES for f in files):
                             ui.notify(upload_limits, type='warning')
                             return
+                        if not await can_start_browser_upload(get_auth_header()):
+                            return
                         from utils.usage import record
                         record(f"upload.batch.{len(files)}")
                         batch.clear()
@@ -300,7 +356,7 @@ def register():
 
                 def failed():
                     for item in batch:
-                        if not item.received:
+                        if not item.received and item.phase == 'Uploading':
                             item.phase = 'Failed'
                             item.error = 'Transfer interrupted. Please upload this file again.'
                 uploader.on('failed', failed)
@@ -310,7 +366,7 @@ def register():
         overlay.on('keydown.esc', lambda: overlay.set_visibility(False))
         overlay.set_visibility(False)
 
-        def open_upload():
+        async def open_upload():
             if any(not u.received and u.phase == 'Uploading' for u in batch):
                 ui.notify('An upload is already transferring. You can add more files when it finishes.')
                 return
@@ -326,6 +382,7 @@ def register():
             overlay.set_visibility(True)
             # Move focus out of the underlying iframe so Escape reaches this window.
             ui.run_javascript("requestAnimationFrame(() => document.getElementById('upload-settings-overlay')?.focus())")
+            await refresh_upload_quota(quota_remaining, get_auth_header())
         ui.button(on_click=open_upload).props('id=background-upload-launcher').style('display:none')
         ui.add_body_html('''<script>
         window.scribeUploading = false;
