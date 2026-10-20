@@ -230,43 +230,62 @@ async def index(request: Request) -> None:
 
         is_not_activated = has_token and not get_user_status()
 
-        with ui.column().classes("w-full h-screen items-center justify-center"):
-            # No card/background here — keep the landing page seamless on the
-            # page background (matches the dark theme without a grey box).
-            with ui.column().style(
-                "width: 500px; max-width: 90%; padding: 40px;"
-            ).classes("items-center"):
-                with ui.column().classes("w-full items-center gap-4"):
-                    ui.image(f"static/{settings.LOGO_LANDING}").style(
-                        f"max-width: {settings.LOGO_LANDING_WIDTH}px; height: auto;"
-                    )
+        # Landing page: organisation bar, sign-in card with the AI notice, footer.
+        # Colours come from the theme variables so light and dark both work.
+        # The AI icon is the EU basic icon with a text label, per
+        # https://digital-strategy.ec.europa.eu/en/policies/eu-icons-labelling-ai-generated-content
+        ui.add_head_html(
+            """<style>
+            :root, .body--light { --landing-page-bg: #f5f5f5; --landing-card-bg: #ffffff; --landing-line: #e0e0e0; }
+            .body--dark { --landing-page-bg: #121212; --landing-card-bg: #1e1e1e; --landing-line: #333333; }
+            body:has(.landing) { background: var(--landing-page-bg); }
+            .landing-card { width: 400px; max-width: 100%; box-sizing: border-box; background: var(--landing-card-bg);
+                            border: 1px solid var(--landing-line); border-radius: 8px; padding: 32px; }
+            .landing-muted { color: var(--color-text-muted); }
+            .landing-login.q-btn { background: var(--color-nordunet-blue) !important; color: #ffffff !important; height: 44px; }
+            .landing-ai { border-top: 1px solid var(--landing-line); padding-top: 16px; }
+            .ai-label { width: 32px; height: 32px; flex: none; }
+            .ai-label--dark { display: none; }
+            .body--dark .ai-label--light { display: none; }
+            .body--dark .ai-label--dark { display: block; }
+            </style>"""
+        )
+        with ui.column().classes("landing w-full min-h-screen no-wrap justify-between gap-0").style(
+            "padding: 4px 8px;"
+        ):
+            with ui.row().classes("items-center gap-2 no-wrap"):
+                ui.image(f"static/{settings.LOGO_TOPBAR}").props(
+                    'alt="" no-transition no-spinner'
+                ).style("width: 28px; height: 28px; border-radius: 4px;")
+                ui.label(settings.ORG_NAME).style(
+                    "font-size: 15px; font-weight: 700; letter-spacing: 0.02em;"
+                )
 
-                    ui.label(settings.LANDING_TEXT).classes(
-                        "text-h5 text-center"
-                    ).style("margin-top: 20px;")
+            with ui.column().classes("w-full items-center"):
+                with ui.column().classes("landing-card gap-4"):
+                    with ui.column().classes("gap-1"):
+                        ui.label(settings.LANDING_TEXT).classes("text-h5").style(
+                            "font-weight: 500;"
+                        )
+                        ui.label(
+                            "Create transcripts and subtitles from audio and video files."
+                        ).classes("landing-muted").style("font-size: 15px;")
 
                     if is_not_activated:
-                        with ui.card().classes("w-full no-shadow").style(
-                            "background-color: #fff3cd; border: 1px solid #ffc107; padding: 20px; margin-top: 20px; min-height: 160px;"
+                        with ui.column().classes("w-full items-center gap-2").style(
+                            "background-color: #fff3cd; border: 1px solid #ffc107; border-radius: 6px; padding: 16px; color: #000000;"
                         ):
-                            with ui.column().classes("items-center gap-3"):
-                                ui.icon("warning", size="lg").style("color: #ff9800;")
-                                ui.label("Account pending activation").classes(
-                                    "text-h6"
-                                )
-                                ui.label(
-                                    "Your account has been created but is not yet activated. Please contact your administrator to enable access."
-                                ).classes("text-body2 text-center")
-
-                        with ui.row().classes("w-full gap-3 justify-center").style(
-                            "margin-top: 30px;"
-                        ):
+                            ui.icon("warning", size="md").style("color: #ff9800;")
+                            ui.label("Account pending activation").classes("text-subtitle1")
+                            ui.label(
+                                "Your account has been created but is not yet activated. Please contact your administrator to enable access."
+                            ).classes("text-body2 text-center")
+                        with ui.row().classes("w-full gap-3 justify-center no-wrap"):
                             ui.button(
                                 "Try Again",
                                 icon="refresh",
                                 on_click=lambda: ui.navigate.to("/"),
                             ).props("flat color=white").classes("button-default-style")
-
                             ui.button(
                                 "Logout",
                                 icon="logout",
@@ -274,24 +293,32 @@ async def index(request: Request) -> None:
                             ).props("flat").classes("button-close")
                     else:
                         ui.button(
-                            "Login with SSO",
+                            "Log in with SSO",
                             icon="login",
                             on_click=lambda: ui.navigate.to(
                                 settings.OIDC_APP_LOGIN_ROUTE
                             ),
-                        ).props("flat color=white").classes(
-                            "button-default-style"
-                        ).style(
-                            "width: 220px; height: 44px; margin-top: 30px;"
-                        )
-                ui.html(
-                    "Transcriptions are made with generative AI<br>"
-                    "Mistakes may be included"
-                ).classes(
-                    "text-body1 text-center text-grey-5 w-full"
-                ).style(
-                    "margin-top: 20px;"
-                )
+                        ).props("flat no-caps color=white").classes("landing-login w-full")
+                        ui.label(
+                            "Use the account from your university or organisation."
+                        ).classes("landing-muted w-full text-center").style("font-size: 13px;")
+
+                    with ui.row().classes("landing-ai w-full items-start gap-3 no-wrap"):
+                        ui.element("img").props(
+                            'src=/static/ai-label-black.png alt=""'
+                        ).classes("ai-label ai-label--light")
+                        ui.element("img").props(
+                            'src=/static/ai-label-white.png alt=""'
+                        ).classes("ai-label ai-label--dark")
+                        with ui.column().classes("gap-0").style("font-size: 14px;"):
+                            ui.label("Generated with AI").style("font-weight: 500;")
+                            ui.label(
+                                "Transcripts may contain mistakes. Check them before you share or publish them."
+                            ).classes("landing-muted")
+
+            ui.label(f"A service by {settings.ORG_NAME}").classes(
+                "landing-muted w-full text-center"
+            ).style("font-size: 13px; padding-bottom: 8px;")
 
 
 @ui.page("/logout")
