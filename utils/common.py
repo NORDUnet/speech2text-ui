@@ -1203,6 +1203,19 @@ def page_init(header_text: Optional[str] = "", use_drawer: bool = False) -> ui.d
                     ui.tooltip("Logout")
                 ui.add_head_html("<style>body {background-color: var(--color-bg-surface);}</style>")
 
+    # AI notice pinned to the bottom of every signed-in page. Quasar reserves
+    # the footer's height; full-height layouts subtract --app-footer-height.
+    ui.add_head_html("<style>:root { --app-footer-height: 30px; }</style>")
+    with ui.footer(elevated=False).style(
+        "height: var(--app-footer-height); padding: 0 16px; "
+        "background: var(--color-bg-surface); color: var(--color-text-muted); "
+        "display: flex; align-items: center; justify-content: center;"
+    ):
+        ui.label(
+            f"{settings.TAB_TITLE} uses AI. Transcripts may contain mistakes, "
+            "so check them before you share or publish them."
+        ).classes("text-center").style("font-size: 12px;")
+
     _show_announcement_banners()
     return dark
 

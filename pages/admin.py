@@ -294,7 +294,7 @@ def edit_group(group_id: str) -> None:
             pagination=20,
             on_select=lambda e: None,
         ).style(
-            "width: 100%; box-shadow: none; font-size: 18px; height: calc(100vh - 550px - var(--banner-offset, 0px));"
+            "width: 100%; box-shadow: none; font-size: 18px; height: calc(100vh - 550px - var(--banner-offset, 0px) - var(--app-footer-height, 0px));"
         )
 
         users_table.selected = [
@@ -497,7 +497,7 @@ def statistics(group_id: str) -> None:
                     rows=user_rows,
                     pagination=20,
                 ).style(
-                    "width: 100%; box-shadow: none; font-size: 16px; margin: auto; height: calc(100vh - 160px - var(--banner-offset, 0px));"
+                    "width: 100%; box-shadow: none; font-size: 16px; margin: auto; height: calc(100vh - 160px - var(--banner-offset, 0px) - var(--app-footer-height, 0px));"
                 )
 
                 with stats_table.add_slot("top-right"):
@@ -547,7 +547,7 @@ def statistics(group_id: str) -> None:
                     rows=job_queue,
                     pagination=20,
                 ).style(
-                    "width: 100%; box-shadow: none; font-size: 16px; margin: auto; height: calc(100vh - 160px - var(--banner-offset, 0px));"
+                    "width: 100%; box-shadow: none; font-size: 16px; margin: auto; height: calc(100vh - 160px - var(--banner-offset, 0px) - var(--app-footer-height, 0px));"
                 )
 
                 with stats_table.add_slot("top-right"):
@@ -603,7 +603,7 @@ def create() -> None:
                 )
                 return
 
-            with ui.scroll_area().style("height: calc(100vh - 160px - var(--banner-offset, 0px)); width: 100%;"):
+            with ui.scroll_area().style("height: calc(100vh - 160px - var(--banner-offset, 0px) - var(--app-footer-height, 0px)); width: 100%;"):
                 groups = sorted(
                     groups,
                     key=lambda x: (
@@ -769,7 +769,7 @@ def users() -> None:
         on_select=lambda e: None,
     )
     users_table.style(
-        "width: 100%; height: calc(100vh - 100px - var(--banner-offset, 0px)); box-shadow: none; font-size: 18px;"
+        "width: 100%; height: calc(100vh - 100px - var(--banner-offset, 0px) - var(--app-footer-height, 0px)); box-shadow: none; font-size: 18px;"
     )
     users_table.classes("table-style")
 
@@ -1480,7 +1480,7 @@ def customers() -> None:
         )
         return
 
-    with ui.scroll_area().style("height: calc(100vh - 160px - var(--banner-offset, 0px)); width: 100%;"):
+    with ui.scroll_area().style("height: calc(100vh - 160px - var(--banner-offset, 0px) - var(--app-footer-height, 0px)); width: 100%;"):
         customers_list = sorted(
             customers_data["result"], key=lambda x: x["name"].lower()
         )
