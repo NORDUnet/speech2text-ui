@@ -97,7 +97,8 @@ class SRTEditor:
         )
 
         # Live subtitle preview on the video (native <track>, WebVTT).
-        self.subtitle_preview: bool = app.storage.user.get(
+        # Subtitle files only; transcripts never show captions on the video.
+        self.subtitle_preview: bool = srt_format == "srt" and app.storage.user.get(
             "subtitle_preview", False
         )
         self._preview_refresh_pending = False

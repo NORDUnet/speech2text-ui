@@ -370,20 +370,22 @@ def create() -> None:
                                 lambda: editor.set_autoscroll(autoscroll.value),
                             )
 
-                            with ui.switch(
-                                "Preview subtitles", value=editor.subtitle_preview
-                            ) as subtitle_preview_switch:
-                                ui.tooltip(
-                                    "Show the captions on the video the way a "
-                                    "player would render them — including "
-                                    "unsaved edits."
+                            # Subtitle preview only applies to subtitle files.
+                            if data_format == "srt":
+                                with ui.switch(
+                                    "Preview subtitles", value=editor.subtitle_preview
+                                ) as subtitle_preview_switch:
+                                    ui.tooltip(
+                                        "Show the captions on the video the way a "
+                                        "player would render them — including "
+                                        "unsaved edits."
+                                    )
+                                subtitle_preview_switch.on(
+                                    "click",
+                                    lambda: editor.set_subtitle_preview(
+                                        subtitle_preview_switch.value
+                                    ),
                                 )
-                            subtitle_preview_switch.on(
-                                "click",
-                                lambda: editor.set_subtitle_preview(
-                                    subtitle_preview_switch.value
-                                ),
-                            )
 
                             with ui.tabs().props("dense no-caps inline-label").classes("text-inherit") as editor_tools:
                                 if editor.words:
@@ -407,7 +409,7 @@ def create() -> None:
                         # wait for the websocket connection — a fixed delay
                         # can fire before the client is connected on large
                         # jobs, and the run_javascript is then lost.
-                        if editor.subtitle_preview:
+                        if editor.subtitle_preview and data_format == "srt":
 
                             async def apply_initial_preview() -> None:
                                 await ui.context.client.connected()
