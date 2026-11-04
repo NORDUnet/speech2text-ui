@@ -76,6 +76,9 @@ class SRTEditor:
         # Word-level timing payload ({"t", "s", "e", "c"} dicts, time-ordered).
         # Empty for jobs transcribed before word timestamps existed.
         self.words: list = []
+        # The JSON result as loaded. Saving merges the edited segments into
+        # it so keys the editor does not edit (the word timings) survive.
+        self._source_result: dict = {}
         self._word_match_cache = None
         self._confidence_review_id = None
         self._confidence_review_caption_index = None
@@ -384,7 +387,7 @@ class SRTEditor:
             if self.srt_format == "srt":
                 data = self.export_srt()
             else:
-                data = json.dumps(self.export_json())
+                data = json.dumps(self.export_result_json())
 
             jsondata = {"format": "srt" if self.srt_format == "srt" else "json", "data": data}
             headers = get_auth_header()
@@ -597,6 +600,8 @@ class SRTEditor:
             words = payload.get("words") or []
         except (ValueError, AttributeError, TypeError):
             return
+
+        self._source_result = data or {}
 
         self.words = [
             w for w in words
@@ -973,12 +978,20 @@ class SRTEditor:
         if not raw_segments:
             return
 
+        # A result saved from the editor is loaded as saved. Merging it again
+        # would undo the user's splits and touch up text they wrote.
+        edited = bool(original_data.get("edited"))
+
         max_words = 50
 
         concatenated = []
         current = raw_segments[0].copy()
 
         for segment in raw_segments[1:]:
+            if edited:
+                concatenated.append(current)
+                current = segment.copy()
+                continue
             word_count = len(current["text"].split())
             past_limit = word_count >= max_words
             if segment["speaker"] != current["speaker"]:
@@ -999,25 +1012,27 @@ class SRTEditor:
         def capitalize_after_periods(text: str) -> str:
             return re.sub(r'(\.\s+)([a-z])', lambda m: m.group(1) + m.group(2).upper(), text)
 
-        for index, seg in enumerate(concatenated):
-            if seg.get("text", "").strip():
+        segments = [seg for seg in concatenated if seg.get("text", "").strip()]
+
+        for index, seg in enumerate(segments, 1):
+            if not edited:
                 seg["text"] = capitalize_after_periods(seg["text"])
                 seg["text"] = seg["text"][0].upper() + seg["text"][1:]
-                start_time = self.seconds_to_timestamp(seg.get("start", 0.0))
-                end_time = self.seconds_to_timestamp(seg.get("end", 0.0))
+            start_time = self.seconds_to_timestamp(seg.get("start", 0.0))
+            end_time = self.seconds_to_timestamp(seg.get("end", 0.0))
 
-                self.captions.append(
-                    SRTCaption(
-                        index,
-                        start_time,
-                        end_time,
-                        seg["text"],
-                        speaker=seg["speaker"]
-                    )
+            self.captions.append(
+                SRTCaption(
+                    index,
+                    start_time,
+                    end_time,
+                    seg["text"],
+                    speaker=seg["speaker"]
                 )
-                seg_speaker = seg["speaker"].strip()
-                if seg_speaker not in self.speakers:
-                    self.speakers.append(seg_speaker)
+            )
+            seg_speaker = seg["speaker"].strip()
+            if seg_speaker not in self.speakers:
+                self.speakers.append(seg_speaker)
 
     def parse_srt(self, srt_content: str) -> None:
         """
@@ -1187,6 +1202,17 @@ class SRTEditor:
             "speaker_count": len(self.speakers),
             "full_transcription": " ".join(seg.text for seg in self.captions),
         }
+
+    def export_result_json(self) -> dict:
+        """
+        The job's JSON result with the edited segments, for saving. The
+        backend replaces the stored result, so keys export_json() leaves out
+        (the word timings) are carried over from the loaded result; without
+        them split at cursor and click-to-seek are gone on the next visit.
+        The "edited" flag makes parse_txt load the segments as saved.
+        """
+
+        return {**self._source_result, **self.export_json(), "edited": True}
 
     def export_srt(self) -> str:
         """

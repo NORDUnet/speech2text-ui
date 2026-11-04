@@ -50,7 +50,7 @@ class ShortcutTests(unittest.TestCase):
 
     def test_save_uses_supported_formats_and_failure_does_not_mark_saved(self):
         self.editor.export_srt=lambda:'subtitle'
-        self.editor.export_json=lambda:{'segments':[]}
+        self.editor.export_result_json=lambda:{'segments':[]}
         for format,expected in [('srt','srt'),('txt','json')]:
             self.editor.srt_format=format
             self.send('save')

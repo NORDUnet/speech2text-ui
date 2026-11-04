@@ -302,7 +302,7 @@ def create() -> None:
                             "click",
                             lambda: save_srt(
                                 uuid,
-                                json.dumps(editor.export_json()),
+                                json.dumps(editor.export_result_json()),
                                 editor,
                                 "json",
                             ),
