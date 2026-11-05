@@ -2,6 +2,12 @@
 import math
 
 
+def language_options(languages, experimental):
+    """Select options for the languages, with the experimental ones labelled."""
+    return {language: f'{language} (experimental)' if language in experimental else language
+            for language in languages}
+
+
 def transcription_options(language, output_format, speakers, verbatim, languages):
     if language not in languages:
         raise ValueError('Choose a supported language.')

@@ -79,7 +79,11 @@ class Settings(BaseSettings):
         "Russian",
         "Ukrainian",
         "Icelandic",
+        "Northern Sami",
     ]
+    # Languages whose model makes notably more mistakes (Northern Sami: about
+    # one word in four). Only the label in the language selects changes.
+    EXPERIMENTAL_LANGUAGES: list[str] = ["Northern Sami"]
     # Fallback default used only when the backend-resolved default is unavailable.
     # Keep in sync with DEFAULT_TRANSCRIPTION_LANGUAGE in the backend settings.
     DEFAULT_TRANSCRIPTION_LANGUAGE: str = "Finnish"

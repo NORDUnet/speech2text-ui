@@ -36,6 +36,7 @@ from utils.token import (
     token_refresh,
 )
 from utils.helpers import storage_decrypt, feedback_send
+from utils.transcription_options import language_options
 
 settings = get_settings()
 # Keep large uploads off RAM (spill to disk past the spool threshold) and route
@@ -1308,7 +1309,11 @@ async def jobs_get(*, include_uploads: bool = True) -> list | None:
             "updated_at": updated_at,
             "deletion_date": deletion_date_display,
             "deletion_approaching": deletion_approaching,
-            "language": job["language"].capitalize(),
+            "language": (
+                job["language"]
+                if job["language"] in settings.WHISPER_LANGUAGES
+                else job["language"].capitalize()
+            ),
             "status": job["status"].capitalize(),
             "model_type": job["model_type"].capitalize(),
             "output_format": job["output_format"].upper(),
@@ -1420,7 +1425,9 @@ def table_transcribe(selected_row, on_complete=None) -> None:
                             lambda: (dialog.close(), ui.navigate.to("/user")),
                         )
                     language = ui.select(
-                        settings.WHISPER_LANGUAGES,
+                        language_options(
+                            settings.WHISPER_LANGUAGES, settings.EXPERIMENTAL_LANGUAGES
+                        ),
                         value=default_language,
                     ).classes("w-full")
 
@@ -1540,7 +1547,9 @@ def table_bulk_transcribe(table: ui.table, on_complete=None) -> None:
                             lambda: (dialog.close(), ui.navigate.to("/user")),
                         )
                     language = ui.select(
-                        settings.WHISPER_LANGUAGES,
+                        language_options(
+                            settings.WHISPER_LANGUAGES, settings.EXPERIMENTAL_LANGUAGES
+                        ),
                         value=default_language,
                     ).classes("w-full")
 

@@ -1,5 +1,5 @@
 import unittest
-from utils.transcription_options import transcription_options
+from utils.transcription_options import language_options, transcription_options
 
 class OptionsTests(unittest.TestCase):
     def options(self, language='English', speakers=0, verbatim=False):
@@ -22,3 +22,9 @@ class OptionsTests(unittest.TestCase):
         first, second = self.options(speakers=2), self.options(speakers=3)
         second['speakers'] = 4
         self.assertEqual(first['speakers'], 2)
+
+
+class LanguageOptionsTests(unittest.TestCase):
+    def test_experimental_languages_are_labelled_but_keep_their_value(self):
+        self.assertEqual(language_options(['English', 'Northern Sami'], ['Northern Sami']),
+                         {'English': 'English', 'Northern Sami': 'Northern Sami (experimental)'})

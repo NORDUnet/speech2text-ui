@@ -12,7 +12,7 @@ from nicegui import app, ui
 from utils.settings import get_settings
 from utils.token import get_auth_header, get_user_status, token_refresh
 from utils.upload_state import Upload, queues
-from utils.transcription_options import transcription_options
+from utils.transcription_options import language_options, transcription_options
 
 settings = get_settings()
 _tasks = set()
@@ -291,7 +291,7 @@ def register():
                 """)
 
                 ui.separator()
-                language = ui.select(settings.WHISPER_LANGUAGES, label='Language',
+                language = ui.select(language_options(settings.WHISPER_LANGUAGES, settings.EXPERIMENTAL_LANGUAGES), label='Language',
                                      value=_default_transcription_language()).classes('w-full').props('outlined dense')
                 with ui.row().classes('items-center gap-1'):
                     output_format = ui.radio(['Transcript', 'Subtitles'], value='Transcript').props('inline')

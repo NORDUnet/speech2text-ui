@@ -25,6 +25,7 @@ from datetime import datetime
 from nicegui import app, ui
 from utils.provisioning_input import parse_claim_input
 from utils.common import add_timezone_to_timestamp, default_styles, page_init
+from utils.transcription_options import language_options
 from db.analytics import (
     get_page_views,
     get_page_views_summary,
@@ -1126,7 +1127,13 @@ def create_customer_dialog(page: callable) -> None:
             language_inherit_label = "Use automatic default"
             default_language_select = (
                 ui.select(
-                    [language_inherit_label] + settings.WHISPER_LANGUAGES,
+                    {
+                        language_inherit_label: language_inherit_label,
+                        **language_options(
+                            settings.WHISPER_LANGUAGES,
+                            settings.EXPERIMENTAL_LANGUAGES,
+                        ),
+                    },
                     label="Default transcription language",
                     value=language_inherit_label,
                 )
@@ -1326,7 +1333,13 @@ def edit_customer(customer_id: str) -> None:
             customer_language = customer.get("default_transcription_language")
             default_language_select = (
                 ui.select(
-                    [language_inherit_label] + settings.WHISPER_LANGUAGES,
+                    {
+                        language_inherit_label: language_inherit_label,
+                        **language_options(
+                            settings.WHISPER_LANGUAGES,
+                            settings.EXPERIMENTAL_LANGUAGES,
+                        ),
+                    },
                     label="Default transcription language",
                     value=(
                         customer_language

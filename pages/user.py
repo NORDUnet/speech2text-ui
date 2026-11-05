@@ -18,6 +18,7 @@
 from nicegui import app, ui
 from utils.common import page_init
 from utils.common import default_styles
+from utils.transcription_options import language_options
 from utils.helpers import (
     default_language_save,
     email_get,
@@ -135,7 +136,12 @@ def create() -> None:
 
         inherit_label = "Use automatic default"
         user_language = userdata.get("user_default_transcription_language")
-        language_options = [inherit_label] + settings.WHISPER_LANGUAGES
+        language_choices = {
+            inherit_label: inherit_label,
+            **language_options(
+                settings.WHISPER_LANGUAGES, settings.EXPERIMENTAL_LANGUAGES
+            ),
+        }
         current_language = (
             user_language
             if user_language in settings.WHISPER_LANGUAGES
@@ -152,7 +158,7 @@ def create() -> None:
             with ui.row().classes("items-center gap-3"):
                 ui.icon("translate", color="black").style("font-size: 20px;")
                 default_language = ui.select(
-                    language_options,
+                    language_choices,
                     value=current_language,
                 ).style("min-width: 300px;")
                 default_language.on_value_change(
