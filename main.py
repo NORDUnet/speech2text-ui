@@ -26,6 +26,7 @@ from pages.status import create as create_status
 from pages.user import create as create_user_page
 from utils.common import default_styles, sweep_stale_uploads
 from utils.settings import get_settings
+from utils.static_files import StaticFilesWithoutDisconnectWatch
 from utils.token import get_user_data, get_user_status, get_token_is_valid
 from utils.helpers import (
     encryption_password_set,
@@ -335,6 +336,7 @@ def logout() -> None:
 
 
 app.add_static_files(url_path="/static", local_directory="static/")
+app.add_middleware(StaticFilesWithoutDisconnectWatch)
 
 # Clean up any plaintext upload temp files orphaned by an unclean shutdown.
 app.on_startup(sweep_stale_uploads)

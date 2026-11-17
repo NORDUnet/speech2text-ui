@@ -669,7 +669,7 @@ class SRTEditor:
         self.refresh_confidence_review()
         container = self.caption_containers.get(target["caption_index"])
         if container:
-            ui.run_javascript(f"document.getElementById('c{container.id}')?.scrollIntoView({{block:'center'}})")
+            ui.run_javascript(f"document.getElementById('{container.html_id}')?.scrollIntoView({{block:'center'}})")
         result = await ui.run_javascript(
             f"window.__reviewConfidenceWord({json.dumps(dict(target, replay=replay))})", timeout=6
         )
@@ -1350,7 +1350,7 @@ class SRTEditor:
         )
         if container is not None:
             ui.run_javascript(
-                f"document.getElementById('c{container.id}')"
+                f"document.getElementById('{container.html_id}')"
                 "?.scrollIntoView({behavior: 'smooth', block: 'center'});"
             )
 
